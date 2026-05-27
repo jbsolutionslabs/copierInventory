@@ -186,8 +186,6 @@
         <option value="TNT Copiers">TNT Copiers</option>
         <option value="Wulff Enterprises">Wulff Enterprises</option>
         <option value="Mars">Mars</option>
-        <option value="RSI">RSI</option>
-        <option value="Copex">Copex</option>
         <option value="Impact Networking">Impact Networking</option>
         <option value="Intercom Group">Intercom Group</option>
         <option value="Other">Other…</option>
@@ -500,7 +498,7 @@ function setChosenFile(file) {
   const base = file.name.toLowerCase();
   const sourceMap = {
     tnt:"TNT Copiers", wulff:"Wulff Enterprises", mars:"Mars",
-    rsi:"RSI", copex:"Copex", impact:"Impact Networking", intercom:"Intercom Group"
+    impact:"Impact Networking", intercom:"Intercom Group"
   };
   for (const [key, name] of Object.entries(sourceMap)) {
     if (base.includes(key)) { document.getElementById("upload-source").value = name; break; }

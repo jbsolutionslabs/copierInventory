@@ -16,16 +16,24 @@ SOURCES = {
         "type": "scrape",
         "url": "https://www.equipmentrecovery.com/collections/all",
     },
+    "copex": {
+        "name": "Copex",
+        "type": "csv_download",
+        "url": "https://www.copexinc.com/our-inventory/",
+    },
+    "rsi": {
+        "name": "RSI Copiers",
+        "type": "csv_download",
+        "url": "https://crm.rsillc.net/bc/download.csv",
+    },
 }
 
 # Manual-import sources (drop files into imports/ folder)
 MANUAL_SOURCES = {
-    "tnt":   "TNT Copiers",
-    "wulff": "Wulff Enterprises",
-    "mars":  "Mars",
-    "rsi":   "RSI",
-    "copex": "Copex",
-    "impact": "Impact Networking",
+    "tnt":      "TNT Copiers",
+    "wulff":    "Wulff Enterprises",
+    "mars":     "Mars",
+    "impact":   "Impact Networking",
     "intercom": "Intercom Group",
 }
 

@@ -31,6 +31,10 @@ def _fetch_source(key: str) -> list:
             from fetchers.als import fetch
         elif key == "ars":
             from fetchers.equipment_recovery import fetch
+        elif key == "copex":
+            from fetchers.copex import fetch
+        elif key == "rsi":
+            from fetchers.rsi import fetch
         else:
             print(f"  No fetcher implemented for '{key}' — skipping.")
             return []

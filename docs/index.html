@@ -6,20 +6,17 @@
   <title>Copier Inventory</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* Sticky header row */
     thead th { position: sticky; top: 0; z-index: 10; }
-    /* Sort arrow indicators */
     th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     th.sortable::after { content: " ↕"; opacity: 0.4; font-size: 0.7em; }
     th.asc::after  { content: " ↑"; opacity: 1; }
     th.desc::after { content: " ↓"; opacity: 1; }
-    /* Row hover */
     tbody tr:hover { background-color: #eff6ff !important; }
-    /* Scrollable table container */
-    #table-wrap { max-height: calc(100vh - 220px); overflow-y: auto; }
-    /* Loading spinner */
+    #table-wrap { max-height: calc(100vh - 228px); overflow-y: auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner { animation: spin 1s linear infinite; }
+    /* Drop zone highlight */
+    #drop-zone.drag-over { border-color: #3b82f6; background: #eff6ff; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans">
@@ -30,30 +27,45 @@
     <h1 class="text-2xl font-bold tracking-tight">Copier Inventory</h1>
     <p id="meta" class="text-blue-200 text-sm mt-0.5">Loading…</p>
   </div>
-  <button
-    id="btn-csv"
-    onclick="downloadCSV()"
-    class="bg-white text-blue-900 font-semibold text-sm px-4 py-2 rounded shadow hover:bg-blue-50 transition disabled:opacity-40"
-    disabled
-  >⬇ Download CSV</button>
+  <div class="flex items-center gap-2 flex-wrap">
+    <!-- Upload -->
+    <button onclick="openUploadModal()"
+      class="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-sm px-4 py-2 rounded shadow transition">
+      ↑ Upload File
+    </button>
+    <!-- Refresh -->
+    <button id="btn-refresh" onclick="triggerRefresh()"
+      class="bg-amber-400 hover:bg-amber-300 text-gray-900 font-semibold text-sm px-4 py-2 rounded shadow transition">
+      ↻ Refresh Data
+    </button>
+    <!-- Settings gear -->
+    <button onclick="openSettingsModal()" title="GitHub settings"
+      class="bg-blue-700 hover:bg-blue-600 text-white text-lg px-3 py-2 rounded shadow transition leading-none">
+      ⚙
+    </button>
+    <!-- CSV download -->
+    <button id="btn-csv" onclick="downloadCSV()" disabled
+      class="bg-white text-blue-900 font-semibold text-sm px-4 py-2 rounded shadow hover:bg-blue-50 transition disabled:opacity-40">
+      ⬇ Download CSV
+    </button>
+  </div>
 </header>
 
 <!-- ── Filters ─────────────────────────────────────────────────────────── -->
 <div class="bg-white border-b border-gray-200 px-6 py-3 flex flex-wrap gap-3 items-center">
-  <input
-    id="search"
-    type="text"
-    placeholder="🔍  Search brand, model, description…"
+  <input id="search" type="text" placeholder="🔍  Search brand, model, description…"
     oninput="applyFilters()"
-    class="flex-1 min-w-52 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-  />
-  <select id="f-source" onchange="applyFilters()" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+    class="flex-1 min-w-52 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+  <select id="f-source" onchange="applyFilters()"
+    class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
     <option value="">All Sources</option>
   </select>
-  <select id="f-brand" onchange="applyFilters()" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+  <select id="f-brand" onchange="applyFilters()"
+    class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
     <option value="">All Brands</option>
   </select>
-  <select id="f-condition" onchange="applyFilters()" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+  <select id="f-condition" onchange="applyFilters()"
+    class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
     <option value="">All Conditions</option>
   </select>
   <button onclick="clearFilters()" class="text-sm text-gray-500 hover:text-gray-800 underline">Clear</button>
@@ -70,10 +82,10 @@
   <table class="w-full text-sm border-collapse bg-white shadow rounded-lg overflow-hidden">
     <thead class="bg-blue-900 text-white text-xs uppercase tracking-wide">
       <tr>
-        <th class="sortable px-4 py-3 text-left" data-col="source">Source</th>
-        <th class="sortable px-4 py-3 text-left" data-col="brand">Brand</th>
-        <th class="sortable px-4 py-3 text-left" data-col="model">Model</th>
-        <th class="sortable px-4 py-3 text-left" data-col="condition">Cond.</th>
+        <th class="sortable px-4 py-3 text-left"  data-col="source">Source</th>
+        <th class="sortable px-4 py-3 text-left"  data-col="brand">Brand</th>
+        <th class="sortable px-4 py-3 text-left"  data-col="model">Model</th>
+        <th class="sortable px-4 py-3 text-left"  data-col="condition">Cond.</th>
         <th class="sortable px-4 py-3 text-right" data-col="qty">Qty</th>
         <th class="sortable px-4 py-3 text-right" data-col="price">Price</th>
         <th class="px-4 py-3 text-left">Description</th>
@@ -82,37 +94,156 @@
     </thead>
     <tbody id="tbody"></tbody>
   </table>
-  <div id="empty-msg" class="hidden text-center text-gray-400 py-16 text-lg">No machines match your filters.</div>
+  <div id="empty-msg" class="hidden text-center text-gray-400 py-16 text-lg">
+    No machines match your filters.
+  </div>
 </div>
 
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     MODAL: GitHub Settings
+════════════════════════════════════════════════════════════════════════ -->
+<div id="modal-settings" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+    <h2 class="text-lg font-bold text-gray-900 mb-1">GitHub Settings</h2>
+    <p class="text-sm text-gray-500 mb-4">
+      Required for <strong>Refresh</strong> and <strong>Upload</strong>.
+      Create a Personal Access Token at
+      <a href="https://github.com/settings/tokens/new" target="_blank"
+         class="text-blue-600 underline">github.com/settings/tokens/new</a>
+      with <code class="bg-gray-100 px-1 rounded">repo</code> and
+      <code class="bg-gray-100 px-1 rounded">workflow</code> scopes.
+      Your token is stored only in this browser.
+    </p>
+
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">GitHub Username / Org</label>
+        <input id="inp-owner" type="text" placeholder="e.g. your-username"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Repository Name</label>
+        <input id="inp-repo" type="text" placeholder="e.g. copierInventory"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Personal Access Token</label>
+        <input id="inp-token" type="password" placeholder="ghp_…"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+    </div>
+
+    <div id="settings-error" class="hidden mt-3 text-sm text-red-600"></div>
+
+    <div class="flex justify-end gap-2 mt-5">
+      <button onclick="closeSettingsModal()"
+        class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded border border-gray-300 hover:bg-gray-50">
+        Cancel
+      </button>
+      <button onclick="saveSettings()"
+        class="px-4 py-2 text-sm font-semibold bg-blue-700 text-white rounded hover:bg-blue-800">
+        Save
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     MODAL: Upload File
+════════════════════════════════════════════════════════════════════════ -->
+<div id="modal-upload" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+    <h2 class="text-lg font-bold text-gray-900 mb-1">Upload Inventory File</h2>
+    <p class="text-sm text-gray-500 mb-4">
+      Upload a CSV or Excel file from a manual source (TNT, Wulff, Mars, RSI, etc.).
+      The file is committed to the repo's <code class="bg-gray-100 px-1 rounded">imports/</code> folder,
+      then a refresh is triggered automatically.
+    </p>
+
+    <!-- Drop zone -->
+    <div id="drop-zone"
+      class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-400 transition mb-4"
+      onclick="document.getElementById('file-input').click()"
+      ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <div id="drop-label">
+        <p class="text-gray-500 font-medium">Drop file here or <span class="text-blue-600 underline">browse</span></p>
+        <p class="text-xs text-gray-400 mt-1">Accepts .csv, .xlsx, .xls</p>
+      </div>
+      <div id="drop-chosen" class="hidden">
+        <p class="text-blue-700 font-semibold" id="chosen-name"></p>
+        <p class="text-xs text-gray-400 mt-1" id="chosen-size"></p>
+      </div>
+    </div>
+    <input id="file-input" type="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="onFileChosen(event)" />
+
+    <!-- Source label -->
+    <div class="mb-4">
+      <label class="block text-xs font-semibold text-gray-600 mb-1">Source Name (auto-detected, editable)</label>
+      <select id="upload-source"
+        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+        <option value="TNT Copiers">TNT Copiers</option>
+        <option value="Wulff Enterprises">Wulff Enterprises</option>
+        <option value="Mars">Mars</option>
+        <option value="RSI">RSI</option>
+        <option value="Copex">Copex</option>
+        <option value="Impact Networking">Impact Networking</option>
+        <option value="Intercom Group">Intercom Group</option>
+        <option value="Other">Other…</option>
+      </select>
+    </div>
+
+    <!-- Status -->
+    <div id="upload-status" class="hidden text-sm rounded px-3 py-2 mb-4"></div>
+
+    <!-- Progress bar -->
+    <div id="upload-progress-wrap" class="hidden mb-4">
+      <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div id="upload-progress-bar" class="h-2 bg-blue-500 rounded-full transition-all duration-300" style="width:0%"></div>
+      </div>
+      <p id="upload-progress-label" class="text-xs text-gray-500 mt-1">Uploading…</p>
+    </div>
+
+    <div class="flex justify-end gap-2">
+      <button onclick="closeUploadModal()"
+        class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded border border-gray-300 hover:bg-gray-50">
+        Cancel
+      </button>
+      <button id="btn-do-upload" onclick="doUpload()" disabled
+        class="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+        Upload & Refresh
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     JavaScript
+════════════════════════════════════════════════════════════════════════ -->
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
+// ── Data state ─────────────────────────────────────────────────────────────
 let allRecords = [];
 let filtered   = [];
 let sortCol    = "source";
-let sortDir    = 1;  // 1 = asc, -1 = desc
+let sortDir    = 1;
 
-// ── Bootstrap ──────────────────────────────────────────────────────────────
+// ── Bootstrap: load inventory JSON ─────────────────────────────────────────
 (async () => {
-  const spinner = document.getElementById("spinner");
-  spinner.classList.remove("hidden");
-
+  showSpinner(true);
   try {
-    // Path works both locally (relative) and on GitHub Pages
     const res  = await fetch("data/inventory.json");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-
     allRecords = data.records || [];
 
-    // Meta line
     const updated = data.updated
       ? new Date(data.updated).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})
       : "unknown";
     document.getElementById("meta").textContent =
       `${data.total.toLocaleString()} machines · ${data.sources?.length ?? "?"} sources · Updated ${updated}`;
 
-    // Populate filter dropdowns
     populateSelect("f-source",    [...new Set(allRecords.map(r => r.source))].sort());
     populateSelect("f-brand",     [...new Set(allRecords.map(r => r.brand).filter(Boolean))].sort());
     populateSelect("f-condition", [...new Set(allRecords.map(r => r.condition).filter(Boolean))].sort());
@@ -122,75 +253,61 @@ let sortDir    = 1;  // 1 = asc, -1 = desc
   } catch (err) {
     document.getElementById("meta").textContent = "Error loading inventory data.";
     document.getElementById("count-label").textContent = err.message;
-    console.error(err);
   } finally {
-    spinner.classList.add("hidden");
+    showSpinner(false);
   }
 })();
 
 // ── Filter + sort ──────────────────────────────────────────────────────────
 function applyFilters() {
-  const q      = document.getElementById("search").value.trim().toLowerCase();
-  const src    = document.getElementById("f-source").value;
-  const brand  = document.getElementById("f-brand").value;
-  const cond   = document.getElementById("f-condition").value;
+  const q     = document.getElementById("search").value.trim().toLowerCase();
+  const src   = document.getElementById("f-source").value;
+  const brand = document.getElementById("f-brand").value;
+  const cond  = document.getElementById("f-condition").value;
 
   filtered = allRecords.filter(r => {
     if (src   && r.source    !== src)   return false;
     if (brand && r.brand     !== brand) return false;
     if (cond  && r.condition !== cond)  return false;
     if (q) {
-      const hay = [r.brand, r.model, r.description, r.notes, r.source]
-        .join(" ").toLowerCase();
+      const hay = [r.brand, r.model, r.description, r.notes, r.source].join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
   });
-
   sortAndRender();
 }
 
 function sortAndRender() {
   filtered.sort((a, b) => {
-    const av = (a[sortCol] ?? "");
-    const bv = (b[sortCol] ?? "");
+    const av = a[sortCol] ?? "", bv = b[sortCol] ?? "";
     if (typeof av === "number" && typeof bv === "number") return (av - bv) * sortDir;
     return String(av).localeCompare(String(bv)) * sortDir;
   });
   render();
 }
 
-// ── Render ─────────────────────────────────────────────────────────────────
-const STRIPE = ["bg-white", "bg-gray-50"];
-
 function render() {
   const tbody = document.getElementById("tbody");
   const empty = document.getElementById("empty-msg");
-
   document.getElementById("count-label").textContent =
     `Showing ${filtered.length.toLocaleString()} of ${allRecords.length.toLocaleString()} machines`;
 
-  if (!filtered.length) {
-    tbody.innerHTML = "";
-    empty.classList.remove("hidden");
-    return;
-  }
+  if (!filtered.length) { tbody.innerHTML = ""; empty.classList.remove("hidden"); return; }
   empty.classList.add("hidden");
 
-  // Render in chunks to keep UI responsive for large datasets
-  const CHUNK = 200;
+  const STRIPE = ["bg-white","bg-gray-50"];
   let html = "";
-  for (let i = 0; i < Math.min(filtered.length, 2000); i++) {
+  const limit = Math.min(filtered.length, 2000);
+  for (let i = 0; i < limit; i++) {
     const r = filtered[i];
-    const stripe = STRIPE[i % 2];
-    const price  = r.price ? `$${Number(r.price).toLocaleString()}` : "—";
-    const qty    = r.qty   ? Number(r.qty) : 1;
-    html += `<tr class="${stripe}">
+    const price = r.price ? `$${Number(r.price).toLocaleString()}` : "—";
+    html += `<tr class="${STRIPE[i%2]}">
       <td class="px-4 py-2 whitespace-nowrap text-blue-700 font-medium">${esc(r.source)}</td>
       <td class="px-4 py-2 whitespace-nowrap font-semibold">${esc(r.brand)}</td>
       <td class="px-4 py-2">${esc(r.model)}</td>
       <td class="px-4 py-2 whitespace-nowrap">${condBadge(r.condition)}</td>
-      <td class="px-4 py-2 text-right">${qty}</td>
+      <td class="px-4 py-2 text-right">${Number(r.qty)||1}</td>
       <td class="px-4 py-2 text-right whitespace-nowrap">${price}</td>
       <td class="px-4 py-2 text-gray-600 max-w-xs truncate" title="${esc(r.description)}">${esc(r.description)}</td>
       <td class="px-4 py-2 text-gray-500 max-w-xs truncate" title="${esc(r.notes)}">${esc(r.notes)}</td>
@@ -198,79 +315,337 @@ function render() {
   }
   if (filtered.length > 2000) {
     html += `<tr><td colspan="8" class="text-center text-gray-400 py-4 text-sm">
-      Showing first 2,000 of ${filtered.length.toLocaleString()} results — refine your search to see more.
-    </td></tr>`;
+      Showing first 2,000 of ${filtered.length.toLocaleString()} — refine search to see more.</td></tr>`;
   }
   tbody.innerHTML = html;
 }
 
 function condBadge(cond) {
   if (!cond) return '<span class="text-gray-400">—</span>';
-  const colors = {
-    "Yes":  "bg-green-100 text-green-800",
-    "Pass": "bg-green-100 text-green-800",
-    "No":   "bg-red-100 text-red-700",
-    "Fail": "bg-red-100 text-red-700",
-    "Unk":  "bg-yellow-100 text-yellow-800",
-  };
-  const cls = colors[cond] ?? "bg-gray-100 text-gray-600";
-  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${cls}">${esc(cond)}</span>`;
+  const colors = { Yes:"bg-green-100 text-green-800", Pass:"bg-green-100 text-green-800",
+                   No:"bg-red-100 text-red-700",   Fail:"bg-red-100 text-red-700",
+                   Unk:"bg-yellow-100 text-yellow-800" };
+  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${colors[cond]||"bg-gray-100 text-gray-600"}">${esc(cond)}</span>`;
 }
 
 function esc(s) {
-  return String(s ?? "")
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-// ── Sorting ────────────────────────────────────────────────────────────────
+// ── Sort headers ───────────────────────────────────────────────────────────
 document.querySelectorAll("th.sortable").forEach(th => {
   th.addEventListener("click", () => {
     const col = th.dataset.col;
-    if (sortCol === col) {
-      sortDir *= -1;
-    } else {
-      sortCol = col;
-      sortDir = 1;
-    }
+    sortDir = (sortCol === col) ? sortDir * -1 : 1;
+    sortCol = col;
     document.querySelectorAll("th.sortable").forEach(t => t.classList.remove("asc","desc"));
     th.classList.add(sortDir === 1 ? "asc" : "desc");
     sortAndRender();
   });
 });
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Misc helpers ───────────────────────────────────────────────────────────
 function populateSelect(id, values) {
   const sel = document.getElementById(id);
-  values.forEach(v => {
-    const opt = document.createElement("option");
-    opt.value = opt.textContent = v;
-    sel.appendChild(opt);
-  });
+  values.forEach(v => { const o = document.createElement("option"); o.value = o.textContent = v; sel.appendChild(o); });
 }
-
 function clearFilters() {
   document.getElementById("search").value = "";
-  ["f-source","f-brand","f-condition"].forEach(id => {
-    document.getElementById(id).value = "";
-  });
+  ["f-source","f-brand","f-condition"].forEach(id => document.getElementById(id).value = "");
   applyFilters();
 }
-
+function showSpinner(on) {
+  document.getElementById("spinner").classList.toggle("hidden", !on);
+}
 function downloadCSV() {
   const cols = ["source","brand","model","condition","qty","price","description","notes"];
-  const header = cols.join(",");
-  const rows = filtered.map(r =>
-    cols.map(c => {
-      const v = String(r[c] ?? "").replace(/"/g,'""');
-      return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v;
-    }).join(",")
-  );
-  const blob = new Blob([header + "\n" + rows.join("\n")], {type:"text/csv"});
+  const rows = filtered.map(r => cols.map(c => {
+    const v = String(r[c]??"").replace(/"/g,'""');
+    return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v;
+  }).join(","));
+  const blob = new Blob([cols.join(",")+"\n"+rows.join("\n")], {type:"text/csv"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `copier-inventory-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════════════════════════════════════════
+function loadSettings() {
+  return {
+    owner: localStorage.getItem("gh_owner") || "",
+    repo:  localStorage.getItem("gh_repo")  || "",
+    token: localStorage.getItem("gh_token") || "",
+  };
+}
+function openSettingsModal() {
+  const s = loadSettings();
+  document.getElementById("inp-owner").value = s.owner;
+  document.getElementById("inp-repo").value  = s.repo;
+  document.getElementById("inp-token").value = s.token;
+  document.getElementById("settings-error").classList.add("hidden");
+  document.getElementById("modal-settings").classList.remove("hidden");
+}
+function closeSettingsModal() {
+  document.getElementById("modal-settings").classList.add("hidden");
+}
+function saveSettings() {
+  const owner = document.getElementById("inp-owner").value.trim();
+  const repo  = document.getElementById("inp-repo").value.trim();
+  const token = document.getElementById("inp-token").value.trim();
+  const err   = document.getElementById("settings-error");
+  if (!owner || !repo || !token) {
+    err.textContent = "All three fields are required.";
+    err.classList.remove("hidden");
+    return;
+  }
+  localStorage.setItem("gh_owner", owner);
+  localStorage.setItem("gh_repo",  repo);
+  localStorage.setItem("gh_token", token);
+  closeSettingsModal();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// REFRESH (triggers GitHub Actions workflow_dispatch)
+// ════════════════════════════════════════════════════════════════════════════
+async function triggerRefresh() {
+  const { owner, repo, token } = loadSettings();
+  if (!owner || !repo || !token) { openSettingsModal(); return; }
+
+  const btn = document.getElementById("btn-refresh");
+  btn.disabled = true;
+  btn.textContent = "Triggering…";
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/actions/workflows/refresh.yml/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ref: "main" }),
+      }
+    );
+    if (res.status === 204) {
+      btn.textContent = "✓ Triggered!";
+      btn.classList.add("bg-green-500","text-white");
+      btn.classList.remove("bg-amber-400","text-gray-900");
+      setTimeout(resetRefreshBtn, 4000);
+    } else {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(`${res.status}: ${body.message || "Unknown error"}`);
+    }
+  } catch (err) {
+    btn.textContent = "✗ Error — check settings";
+    btn.classList.add("bg-red-500","text-white");
+    btn.classList.remove("bg-amber-400","text-gray-900");
+    console.error("Refresh error:", err.message);
+    setTimeout(resetRefreshBtn, 4000);
+  }
+}
+function resetRefreshBtn() {
+  const btn = document.getElementById("btn-refresh");
+  btn.disabled = false;
+  btn.textContent = "↻ Refresh Data";
+  btn.className = "bg-amber-400 hover:bg-amber-300 text-gray-900 font-semibold text-sm px-4 py-2 rounded shadow transition";
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FILE UPLOAD
+// ════════════════════════════════════════════════════════════════════════════
+let chosenFile = null;
+
+function openUploadModal() {
+  chosenFile = null;
+  document.getElementById("drop-label").classList.remove("hidden");
+  document.getElementById("drop-chosen").classList.add("hidden");
+  document.getElementById("btn-do-upload").disabled = true;
+  document.getElementById("upload-status").classList.add("hidden");
+  document.getElementById("upload-progress-wrap").classList.add("hidden");
+  document.getElementById("file-input").value = "";
+  document.getElementById("modal-upload").classList.remove("hidden");
+}
+function closeUploadModal() {
+  document.getElementById("modal-upload").classList.add("hidden");
+  chosenFile = null;
+}
+
+// Drag-and-drop
+function onDragOver(e)  { e.preventDefault(); document.getElementById("drop-zone").classList.add("drag-over"); }
+function onDragLeave(e) { document.getElementById("drop-zone").classList.remove("drag-over"); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById("drop-zone").classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if (file) setChosenFile(file);
+}
+function onFileChosen(e) { const f = e.target.files[0]; if (f) setChosenFile(f); }
+
+function setChosenFile(file) {
+  const allowed = [".csv",".xlsx",".xls"];
+  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  if (!allowed.includes(ext)) {
+    showUploadStatus("Only .csv, .xlsx, .xls files are accepted.", "error");
+    return;
+  }
+  chosenFile = file;
+
+  // Auto-detect source from filename
+  const base = file.name.toLowerCase();
+  const sourceMap = {
+    tnt:"TNT Copiers", wulff:"Wulff Enterprises", mars:"Mars",
+    rsi:"RSI", copex:"Copex", impact:"Impact Networking", intercom:"Intercom Group"
+  };
+  for (const [key, name] of Object.entries(sourceMap)) {
+    if (base.includes(key)) { document.getElementById("upload-source").value = name; break; }
+  }
+
+  document.getElementById("chosen-name").textContent = file.name;
+  document.getElementById("chosen-size").textContent = `${(file.size/1024).toFixed(1)} KB`;
+  document.getElementById("drop-label").classList.add("hidden");
+  document.getElementById("drop-chosen").classList.remove("hidden");
+  document.getElementById("btn-do-upload").disabled = false;
+  document.getElementById("upload-status").classList.add("hidden");
+}
+
+async function doUpload() {
+  const { owner, repo, token } = loadSettings();
+  if (!owner || !repo || !token) {
+    closeUploadModal();
+    openSettingsModal();
+    return;
+  }
+  if (!chosenFile) return;
+
+  const btn = document.getElementById("btn-do-upload");
+  btn.disabled = true;
+
+  // Read file as base64
+  setProgress(10, "Reading file…");
+  let base64;
+  try {
+    base64 = await fileToBase64(chosenFile);
+  } catch (e) {
+    showUploadStatus("Could not read file: " + e.message, "error");
+    btn.disabled = false;
+    return;
+  }
+
+  // Check if file already exists in the repo (need SHA to update)
+  setProgress(30, "Checking for existing file…");
+  const filename = sanitizeFilename(chosenFile.name);
+  const apiPath  = `https://api.github.com/repos/${owner}/${repo}/contents/imports/${filename}`;
+  const ghHeaders = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json",
+  };
+
+  let existingSha = null;
+  try {
+    const check = await fetch(apiPath, { headers: ghHeaders });
+    if (check.status === 200) {
+      const existing = await check.json();
+      // Check if content is identical (GitHub returns base64 with newlines)
+      const existingB64 = existing.content.replace(/\n/g, "");
+      if (existingB64 === base64) {
+        showUploadStatus("This exact file is already in the repo — no changes needed.", "warn");
+        hideProgress();
+        btn.disabled = false;
+        return;
+      }
+      existingSha = existing.sha;
+    }
+  } catch (_) { /* file doesn't exist yet, that's fine */ }
+
+  // Upload (create or update)
+  setProgress(60, existingSha ? "Updating existing file…" : "Uploading file…");
+  const sourceName = document.getElementById("upload-source").value;
+  const body = {
+    message: `chore: upload ${sourceName} inventory — ${filename}`,
+    content: base64,
+    branch: "main",
+    ...(existingSha ? { sha: existingSha } : {}),
+  };
+
+  try {
+    const res = await fetch(apiPath, { method: "PUT", headers: ghHeaders, body: JSON.stringify(body) });
+    if (res.status !== 200 && res.status !== 201) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`${res.status}: ${err.message || "Upload failed"}`);
+    }
+  } catch (e) {
+    showUploadStatus("Upload failed: " + e.message, "error");
+    hideProgress();
+    btn.disabled = false;
+    return;
+  }
+
+  // Trigger refresh workflow
+  setProgress(85, "Triggering refresh…");
+  try {
+    await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/actions/workflows/refresh.yml/dispatches`,
+      { method:"POST", headers: ghHeaders, body: JSON.stringify({ ref:"main" }) }
+    );
+  } catch (_) { /* non-fatal — file is uploaded even if workflow trigger fails */ }
+
+  setProgress(100, "Done!");
+  setTimeout(() => {
+    hideProgress();
+    showUploadStatus(
+      `✓ "${filename}" uploaded successfully${existingSha ? " (updated)" : ""}. ` +
+      "The site will refresh in ~2 minutes.",
+      "success"
+    );
+    btn.disabled = false;
+  }, 500);
+}
+
+// Upload helpers
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function sanitizeFilename(name) {
+  return name.replace(/[^a-zA-Z0-9._\-]/g, "_");
+}
+function setProgress(pct, label) {
+  document.getElementById("upload-progress-wrap").classList.remove("hidden");
+  document.getElementById("upload-progress-bar").style.width = pct + "%";
+  document.getElementById("upload-progress-label").textContent = label;
+}
+function hideProgress() {
+  document.getElementById("upload-progress-wrap").classList.add("hidden");
+}
+function showUploadStatus(msg, type) {
+  const el = document.getElementById("upload-status");
+  const colors = { success:"bg-green-50 text-green-800 border border-green-200",
+                   error:  "bg-red-50 text-red-700 border border-red-200",
+                   warn:   "bg-yellow-50 text-yellow-800 border border-yellow-200" };
+  el.className = `text-sm rounded px-3 py-2 mb-4 ${colors[type]||""}`;
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+
+// Close modals on backdrop click
+document.getElementById("modal-settings").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeSettingsModal();
+});
+document.getElementById("modal-upload").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeUploadModal();
+});
 </script>
 </body>
 </html>

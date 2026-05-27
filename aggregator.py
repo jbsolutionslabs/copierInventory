@@ -3,6 +3,7 @@
 import os
 import glob
 import json
+import hashlib
 import datetime
 import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -35,15 +36,34 @@ def _source_name_from_filename(filename: str) -> str:
     return base.replace("_", " ").replace("-", " ").title()
 
 
+def _file_hash(filepath: str) -> str:
+    """Return SHA-256 hex digest of a file's contents."""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
+
+
 def load_manual_imports() -> list[pd.DataFrame]:
-    """Load all CSV/Excel files from the imports/ directory."""
+    """Load all CSV/Excel files from the imports/ directory, skipping duplicates."""
     frames = []
     patterns = ["*.xlsx", "*.xls", "*.csv"]
     files = []
     for pat in patterns:
         files.extend(glob.glob(os.path.join(IMPORTS_DIR, pat)))
 
+    seen_hashes: dict[str, str] = {}  # hash → first filename that had it
+
     for filepath in sorted(files):
+        basename = os.path.basename(filepath)
+
+        # Skip files with identical content (duplicate uploads)
+        digest = _file_hash(filepath)
+        if digest in seen_hashes:
+            print(f"  [import] SKIPPED {basename} — duplicate of '{seen_hashes[digest]}'")
+            continue
+        seen_hashes[digest] = basename
+
         source_name = _source_name_from_filename(filepath)
         try:
             if filepath.endswith(".csv"):
@@ -54,7 +74,7 @@ def load_manual_imports() -> list[pd.DataFrame]:
             df = normalizer.normalize(raw, source_name)
             if not df.empty:
                 frames.append(df)
-                print(f"  [import] {source_name}: {len(df)} rows from {os.path.basename(filepath)}")
+                print(f"  [import] {source_name}: {len(df)} rows from {basename}")
         except Exception as exc:
             print(f"  [import] ERROR loading {filepath}: {exc}")
 

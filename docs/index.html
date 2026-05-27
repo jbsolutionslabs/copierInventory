@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Copier Inventory</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Sticky header row */
+    thead th { position: sticky; top: 0; z-index: 10; }
+    /* Sort arrow indicators */
+    th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    th.sortable::after { content: " ↕"; opacity: 0.4; font-size: 0.7em; }
+    th.asc::after  { content: " ↑"; opacity: 1; }
+    th.desc::after { content: " ↓"; opacity: 1; }
+    /* Row hover */
+    tbody tr:hover { background-color: #eff6ff !important; }
+    /* Scrollable table container */
+    #table-wrap { max-height: calc(100vh - 220px); overflow-y: auto; }
+    /* Loading spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+<!-- ── Header ─────────────────────────────────────────────────────────── -->
+<header class="bg-blue-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight">Copier Inventory</h1>
+    <p id="meta" class="text-blue-200 text-sm mt-0.5">Loading…</p>
+  </div>
+  <button
+    id="btn-csv"
+    onclick="downloadCSV()"
+    class="bg-white text-blue-900 font-semibold text-sm px-4 py-2 rounded shadow hover:bg-blue-50 transition disabled:opacity-40"
+    disabled
+  >⬇ Download CSV</button>
+</header>
+
+<!-- ── Filters ─────────────────────────────────────────────────────────── -->
+<div class="bg-white border-b border-gray-200 px-6 py-3 flex flex-wrap gap-3 items-center">
+  <input
+    id="search"
+    type="text"
+    placeholder="🔍  Search brand, model, description…"
+    oninput="applyFilters()"
+    class="flex-1 min-w-52 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+  />
+  <select id="f-source" onchange="applyFilters()" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+    <option value="">All Sources</option>
+  </select>
+  <select id="f-brand" onchange="applyFilters()" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+    <option value="">All Brands</option>
+  </select>
+  <select id="f-condition" onchange="applyFilters()" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+    <option value="">All Conditions</option>
+  </select>
+  <button onclick="clearFilters()" class="text-sm text-gray-500 hover:text-gray-800 underline">Clear</button>
+</div>
+
+<!-- ── Status bar ──────────────────────────────────────────────────────── -->
+<div class="px-6 py-2 text-sm text-gray-500 flex items-center gap-2">
+  <span id="count-label">—</span>
+  <span id="spinner" class="inline-block w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full spinner hidden"></span>
+</div>
+
+<!-- ── Table ───────────────────────────────────────────────────────────── -->
+<div id="table-wrap" class="px-6 pb-6">
+  <table class="w-full text-sm border-collapse bg-white shadow rounded-lg overflow-hidden">
+    <thead class="bg-blue-900 text-white text-xs uppercase tracking-wide">
+      <tr>
+        <th class="sortable px-4 py-3 text-left" data-col="source">Source</th>
+        <th class="sortable px-4 py-3 text-left" data-col="brand">Brand</th>
+        <th class="sortable px-4 py-3 text-left" data-col="model">Model</th>
+        <th class="sortable px-4 py-3 text-left" data-col="condition">Cond.</th>
+        <th class="sortable px-4 py-3 text-right" data-col="qty">Qty</th>
+        <th class="sortable px-4 py-3 text-right" data-col="price">Price</th>
+        <th class="px-4 py-3 text-left">Description</th>
+        <th class="px-4 py-3 text-left">Notes</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div id="empty-msg" class="hidden text-center text-gray-400 py-16 text-lg">No machines match your filters.</div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let allRecords = [];
+let filtered   = [];
+let sortCol    = "source";
+let sortDir    = 1;  // 1 = asc, -1 = desc
+
+// ── Bootstrap ──────────────────────────────────────────────────────────────
+(async () => {
+  const spinner = document.getElementById("spinner");
+  spinner.classList.remove("hidden");
+
+  try {
+    // Path works both locally (relative) and on GitHub Pages
+    const res  = await fetch("data/inventory.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    allRecords = data.records || [];
+
+    // Meta line
+    const updated = data.updated
+      ? new Date(data.updated).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})
+      : "unknown";
+    document.getElementById("meta").textContent =
+      `${data.total.toLocaleString()} machines · ${data.sources?.length ?? "?"} sources · Updated ${updated}`;
+
+    // Populate filter dropdowns
+    populateSelect("f-source",    [...new Set(allRecords.map(r => r.source))].sort());
+    populateSelect("f-brand",     [...new Set(allRecords.map(r => r.brand).filter(Boolean))].sort());
+    populateSelect("f-condition", [...new Set(allRecords.map(r => r.condition).filter(Boolean))].sort());
+
+    document.getElementById("btn-csv").disabled = false;
+    applyFilters();
+  } catch (err) {
+    document.getElementById("meta").textContent = "Error loading inventory data.";
+    document.getElementById("count-label").textContent = err.message;
+    console.error(err);
+  } finally {
+    spinner.classList.add("hidden");
+  }
+})();
+
+// ── Filter + sort ──────────────────────────────────────────────────────────
+function applyFilters() {
+  const q      = document.getElementById("search").value.trim().toLowerCase();
+  const src    = document.getElementById("f-source").value;
+  const brand  = document.getElementById("f-brand").value;
+  const cond   = document.getElementById("f-condition").value;
+
+  filtered = allRecords.filter(r => {
+    if (src   && r.source    !== src)   return false;
+    if (brand && r.brand     !== brand) return false;
+    if (cond  && r.condition !== cond)  return false;
+    if (q) {
+      const hay = [r.brand, r.model, r.description, r.notes, r.source]
+        .join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  sortAndRender();
+}
+
+function sortAndRender() {
+  filtered.sort((a, b) => {
+    const av = (a[sortCol] ?? "");
+    const bv = (b[sortCol] ?? "");
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * sortDir;
+    return String(av).localeCompare(String(bv)) * sortDir;
+  });
+  render();
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+const STRIPE = ["bg-white", "bg-gray-50"];
+
+function render() {
+  const tbody = document.getElementById("tbody");
+  const empty = document.getElementById("empty-msg");
+
+  document.getElementById("count-label").textContent =
+    `Showing ${filtered.length.toLocaleString()} of ${allRecords.length.toLocaleString()} machines`;
+
+  if (!filtered.length) {
+    tbody.innerHTML = "";
+    empty.classList.remove("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+
+  // Render in chunks to keep UI responsive for large datasets
+  const CHUNK = 200;
+  let html = "";
+  for (let i = 0; i < Math.min(filtered.length, 2000); i++) {
+    const r = filtered[i];
+    const stripe = STRIPE[i % 2];
+    const price  = r.price ? `$${Number(r.price).toLocaleString()}` : "—";
+    const qty    = r.qty   ? Number(r.qty) : 1;
+    html += `<tr class="${stripe}">
+      <td class="px-4 py-2 whitespace-nowrap text-blue-700 font-medium">${esc(r.source)}</td>
+      <td class="px-4 py-2 whitespace-nowrap font-semibold">${esc(r.brand)}</td>
+      <td class="px-4 py-2">${esc(r.model)}</td>
+      <td class="px-4 py-2 whitespace-nowrap">${condBadge(r.condition)}</td>
+      <td class="px-4 py-2 text-right">${qty}</td>
+      <td class="px-4 py-2 text-right whitespace-nowrap">${price}</td>
+      <td class="px-4 py-2 text-gray-600 max-w-xs truncate" title="${esc(r.description)}">${esc(r.description)}</td>
+      <td class="px-4 py-2 text-gray-500 max-w-xs truncate" title="${esc(r.notes)}">${esc(r.notes)}</td>
+    </tr>`;
+  }
+  if (filtered.length > 2000) {
+    html += `<tr><td colspan="8" class="text-center text-gray-400 py-4 text-sm">
+      Showing first 2,000 of ${filtered.length.toLocaleString()} results — refine your search to see more.
+    </td></tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+function condBadge(cond) {
+  if (!cond) return '<span class="text-gray-400">—</span>';
+  const colors = {
+    "Yes":  "bg-green-100 text-green-800",
+    "Pass": "bg-green-100 text-green-800",
+    "No":   "bg-red-100 text-red-700",
+    "Fail": "bg-red-100 text-red-700",
+    "Unk":  "bg-yellow-100 text-yellow-800",
+  };
+  const cls = colors[cond] ?? "bg-gray-100 text-gray-600";
+  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${cls}">${esc(cond)}</span>`;
+}
+
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Sorting ────────────────────────────────────────────────────────────────
+document.querySelectorAll("th.sortable").forEach(th => {
+  th.addEventListener("click", () => {
+    const col = th.dataset.col;
+    if (sortCol === col) {
+      sortDir *= -1;
+    } else {
+      sortCol = col;
+      sortDir = 1;
+    }
+    document.querySelectorAll("th.sortable").forEach(t => t.classList.remove("asc","desc"));
+    th.classList.add(sortDir === 1 ? "asc" : "desc");
+    sortAndRender();
+  });
+});
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function populateSelect(id, values) {
+  const sel = document.getElementById(id);
+  values.forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = opt.textContent = v;
+    sel.appendChild(opt);
+  });
+}
+
+function clearFilters() {
+  document.getElementById("search").value = "";
+  ["f-source","f-brand","f-condition"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
+  applyFilters();
+}
+
+function downloadCSV() {
+  const cols = ["source","brand","model","condition","qty","price","description","notes"];
+  const header = cols.join(",");
+  const rows = filtered.map(r =>
+    cols.map(c => {
+      const v = String(r[c] ?? "").replace(/"/g,'""');
+      return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v;
+    }).join(",")
+  );
+  const blob = new Blob([header + "\n" + rows.join("\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `copier-inventory-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>

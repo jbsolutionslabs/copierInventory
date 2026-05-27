@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Generated Excel files (too large for git; JSON is used instead)
+output/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

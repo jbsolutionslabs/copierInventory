@@ -1,0 +1,41 @@
+name: Refresh Inventory
+
+on:
+  schedule:
+    # 7:00 AM Pacific Time (UTC-7 in summer / UTC-8 in winter)
+    # Using 14:00 UTC which covers both seasons reasonably
+    - cron: "0 14 * * *"
+  workflow_dispatch:   # also allows manual trigger from GitHub UI
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to commit the updated JSON
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 pandas openpyxl lxml
+
+      - name: Run inventory fetchers
+        run: python3 run.py
+        # Fetches RCI, ALS, and ARS automatically.
+        # Manual sources (TNT, Wulff, Mars, RSI) are not fetched here since
+        # those files aren't in the repo — add them to imports/ if needed.
+
+      - name: Commit updated inventory
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/inventory.json
+          # Only commit if the file actually changed
+          git diff --staged --quiet || git commit -m "chore: refresh inventory $(date -u +%Y-%m-%d)"
+          git push

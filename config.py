@@ -143,6 +143,7 @@ OUTPUT_COLUMNS = [
     "brand",
     "model",
     "condition",
+    "meter",
     "qty",
     "price",
     "description",

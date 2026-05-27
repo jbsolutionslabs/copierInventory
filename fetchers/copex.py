@@ -75,7 +75,7 @@ def fetch() -> pd.DataFrame:
         "#":          "sku",
         "Brand":      "brand",
         "Model":      "model",
-        "Meter":      "bw_meter",
+        "Meter":      "meter",
         "COLOR":      "color_meter",
         "Feeder":     "description",
         "Sort_Fin":   "notes",

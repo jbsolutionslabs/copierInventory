@@ -11,7 +11,7 @@ SOURCE_NAME = "RCI Wholesale"
 INVENTORY_URL = "http://inv.rciwholesale.com/"
 
 # Column order as rendered in the grid
-_COLUMNS = ["control_num", "brand", "model", "description", "bw_meter", "color_meter"]
+_COLUMNS = ["control_num", "brand", "model", "description", "meter", "color_meter"]
 
 
 def fetch() -> pd.DataFrame:

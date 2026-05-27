@@ -46,7 +46,9 @@ def resolve_brand(raw: str) -> str:
 _COL_SYNONYMS: dict[str, str] = {
     # source-specific ALS columns
     "make":         "brand",
-    "meter":        "bw_meter",
+    "meter":        "meter",
+    "total_meter":  "meter",
+    "bw_meter":     "meter",
     "accessories":  "description",
     "passcopy":     "condition",
     "comment":      "notes",
@@ -165,6 +167,10 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
             df["price"].astype(str).str.replace(r"[^\d.]", "", regex=True), errors="coerce"
         )
 
+    # Clean meter: parse "5K" → 5000, "736 TOTAL" → 736, "75,664" → 75664
+    if "meter" in df.columns:
+        df["meter"] = df["meter"].apply(_clean_meter)
+
     # Fill NaN with empty string for text columns, 0 for numeric
     for col in OUTPUT_COLUMNS:
         if df[col].dtype == object:
@@ -173,6 +179,36 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
             df[col] = df[col].fillna(0)
 
     return df[OUTPUT_COLUMNS].reset_index(drop=True)
+
+
+def _clean_meter(val) -> float | None:
+    """
+    Parse meter values into a plain integer (or None if unreadable).
+    Handles: "5K" → 5000, "24K" → 24000, "736 TOTAL" → 736,
+             "75,664" → 75664, "/" or "N/A" → None.
+    """
+    if val is None:
+        return None
+    s = str(val).strip().upper()
+    if not s or s in ("/", "N/A", "NA", "NAN", "NONE", ""):
+        return None
+    # "5K" or "24K" format
+    k_match = re.match(r"^([\d.]+)\s*K$", s)
+    if k_match:
+        try:
+            return float(k_match.group(1)) * 1000
+        except ValueError:
+            return None
+    # Strip non-numeric suffix (e.g. " TOTAL", " BW")
+    s = re.sub(r"[^\d,.].*$", "", s).strip()
+    # Remove commas
+    s = s.replace(",", "")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 
 def _infer_brand_from_model(model: str) -> str:

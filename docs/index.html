@@ -86,6 +86,7 @@
         <th class="sortable px-4 py-3 text-left"  data-col="brand">Brand</th>
         <th class="sortable px-4 py-3 text-left"  data-col="model">Model</th>
         <th class="sortable px-4 py-3 text-left"  data-col="condition">Cond.</th>
+        <th class="sortable px-4 py-3 text-right" data-col="meter">Meter</th>
         <th class="sortable px-4 py-3 text-right" data-col="qty">Qty</th>
         <th class="sortable px-4 py-3 text-right" data-col="price">Price</th>
         <th class="px-4 py-3 text-left">Description</th>
@@ -305,6 +306,7 @@ function render() {
       <td class="px-4 py-2 whitespace-nowrap font-semibold">${esc(r.brand)}</td>
       <td class="px-4 py-2">${esc(r.model)}</td>
       <td class="px-4 py-2 whitespace-nowrap">${condBadge(r.condition)}</td>
+      <td class="px-4 py-2 text-right whitespace-nowrap">${fmtMeter(r.meter)}</td>
       <td class="px-4 py-2 text-right">${Number(r.qty)||1}</td>
       <td class="px-4 py-2 text-right whitespace-nowrap">${price}</td>
       <td class="px-4 py-2 text-gray-600 max-w-xs truncate" title="${esc(r.description)}">${esc(r.description)}</td>
@@ -312,10 +314,16 @@ function render() {
     </tr>`;
   }
   if (filtered.length > 2000) {
-    html += `<tr><td colspan="8" class="text-center text-gray-400 py-4 text-sm">
+    html += `<tr><td colspan="9" class="text-center text-gray-400 py-4 text-sm">
       Showing first 2,000 of ${filtered.length.toLocaleString()} — refine search to see more.</td></tr>`;
   }
   tbody.innerHTML = html;
+}
+
+function fmtMeter(val) {
+  const n = Number(val);
+  if (!n || isNaN(n)) return '<span class="text-gray-300">—</span>';
+  return n.toLocaleString();
 }
 
 function condBadge(cond) {
@@ -356,7 +364,7 @@ function showSpinner(on) {
   document.getElementById("spinner").classList.toggle("hidden", !on);
 }
 function downloadCSV() {
-  const cols = ["source","brand","model","condition","qty","price","description","notes"];
+  const cols = ["source","brand","model","condition","meter","qty","price","description","notes"];
   const rows = filtered.map(r => cols.map(c => {
     const v = String(r[c]??"").replace(/"/g,'""');
     return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v;

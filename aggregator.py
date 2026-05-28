@@ -134,14 +134,15 @@ def write_excel(frames: list[pd.DataFrame]) -> str:
 
     master = pd.concat(frames, ignore_index=True)
 
-    # Primary dedup: by serial number (cross-source — same machine listed by multiple vendors)
+    # Dedup by serial number only — same serial across multiple sources = same physical machine
     if "serial" in master.columns:
         has_serial = master["serial"].notna() & (master["serial"].astype(str).str.strip() != "")
         with_serial    = master[has_serial].copy()
         without_serial = master[~has_serial].copy()
 
         if not with_serial.empty:
-            # Score rows: prefer records that have price, meter, and description filled in
+            # When the same serial appears in multiple sources, keep the record with
+            # the most data (price > meter > description)
             with_serial["_score"] = (
                 (pd.to_numeric(with_serial["price"], errors="coerce").fillna(0) > 0).astype(int) * 4 +
                 (pd.to_numeric(with_serial["meter"], errors="coerce").fillna(0) > 0).astype(int) * 2 +
@@ -152,9 +153,6 @@ def write_excel(frames: list[pd.DataFrame]) -> str:
             with_serial = with_serial.drop(columns=["_score"])
 
         master = pd.concat([with_serial, without_serial], ignore_index=True)
-
-    # Fallback dedup for records without serial: drop exact duplicate rows
-    master = master.drop_duplicates(subset=["brand", "model", "condition", "meter", "price"])
 
     # Sort for readability
     master = master.sort_values(["source", "brand", "model"]).reset_index(drop=True)

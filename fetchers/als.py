@@ -1,16 +1,19 @@
 # fetchers/als.py — ALS Copiers
 # Inventory is served via WordPress Ninja Tables AJAX endpoint.
 # We fetch a fresh nonce from the inventory page, then call the data API.
+# Ninja Tables supports skip_rows/limit_rows pagination; we page through
+# in batches of PAGE_SIZE until we get a short page (end of data).
 
 import re
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 
-SOURCE_NAME = "ALS Copiers"
+SOURCE_NAME    = "ALS Copiers"
 INVENTORY_PAGE = "https://alscopiers.com/inventory/"
 AJAX_URL       = "https://alscopiers.com/wp-admin/admin-ajax.php"
 TABLE_ID       = "2992"
+PAGE_SIZE      = 200   # rows per request
 
 HEADERS = {
     "User-Agent": (
@@ -44,55 +47,75 @@ def _get_nonce(session: requests.Session) -> str:
     raise RuntimeError("[ALS] Could not find ninja_table_public_nonce on inventory page")
 
 
+def _unwrap_rows(data) -> list:
+    """Extract row dicts from Ninja Tables response (handles list or dict wrapper)."""
+    if isinstance(data, list):
+        return [item["value"] if isinstance(item, dict) and "value" in item else item
+                for item in data]
+    if isinstance(data, dict):
+        raw = data.get("data", data.get("rows", []))
+        return [item["value"] if isinstance(item, dict) and "value" in item else item
+                for item in raw]
+    return []
+
+
 def fetch() -> pd.DataFrame:
     """
     Download ALS Copiers inventory via WordPress Ninja Tables AJAX API.
-    Returns a raw DataFrame with all columns from the table.
+    Pages through the full table in batches of PAGE_SIZE to guarantee all
+    records are retrieved regardless of server-side row limits.
     """
     session = requests.Session()
     session.headers.update(HEADERS)
 
     nonce = _get_nonce(session)
 
-    # The AJAX endpoint returns JSON with all rows when limit_rows=0
-    params = {
-        "action":         "wp_ajax_ninja_tables_public_action",
-        "table_id":       TABLE_ID,
-        "target_action":  "get-all-data",
-        "default_sorting":"manual_sort",
-        "skip_rows":      "0",
-        "limit_rows":     "0",
-        "ninja_table_public_nonce": nonce,
+    ajax_headers = {
+        **HEADERS,
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": INVENTORY_PAGE,
+        "Accept": "application/json, text/javascript, */*; q=0.01",
     }
 
-    ajax_headers = {**HEADERS, "X-Requested-With": "XMLHttpRequest",
-                    "Referer": INVENTORY_PAGE,
-                    "Accept": "application/json, text/javascript, */*; q=0.01"}
+    all_rows: list[dict] = []
+    skip = 0
 
-    resp = session.get(AJAX_URL, params=params, headers=ajax_headers, timeout=120)
-    resp.raise_for_status()
+    while True:
+        params = {
+            "action":          "wp_ajax_ninja_tables_public_action",
+            "table_id":        TABLE_ID,
+            "target_action":   "get-all-data",
+            "default_sorting": "manual_sort",
+            "skip_rows":       str(skip),
+            "limit_rows":      str(PAGE_SIZE),
+            "ninja_table_public_nonce": nonce,
+        }
 
-    try:
-        data = resp.json()
-    except Exception as exc:
-        raise RuntimeError(f"[ALS] JSON parse failed: {exc}\nResponse: {resp.text[:500]}")
+        resp = session.get(AJAX_URL, params=params, headers=ajax_headers, timeout=120)
+        resp.raise_for_status()
 
-    # Ninja Tables returns a list of {"options": ..., "value": {...}} objects
-    if isinstance(data, list):
-        # Unwrap "value" key if present
-        rows = [item["value"] if isinstance(item, dict) and "value" in item else item
-                for item in data]
-    elif isinstance(data, dict):
-        raw_rows = data.get("data", data.get("rows", []))
-        rows = [item["value"] if isinstance(item, dict) and "value" in item else item
-                for item in raw_rows]
-    else:
-        rows = []
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"[ALS] JSON parse failed (skip={skip}): {exc}\n{resp.text[:300]}")
 
-    if not rows:
+        page_rows = _unwrap_rows(data)
+
+        if not page_rows:
+            break  # no more data
+
+        all_rows.extend(page_rows)
+        print(f"  [ALS] page skip={skip}: {len(page_rows)} rows (total so far: {len(all_rows)})")
+
+        if len(page_rows) < PAGE_SIZE:
+            break  # last page (short page = end of data)
+
+        skip += PAGE_SIZE
+
+    if not all_rows:
         print("  [ALS] Warning: AJAX returned 0 rows.")
         return pd.DataFrame()
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(all_rows)
     df["_raw_source"] = SOURCE_NAME
     return df

@@ -148,4 +148,5 @@ OUTPUT_COLUMNS = [
     "price",
     "description",
     "notes",
+    "serial",
 ]

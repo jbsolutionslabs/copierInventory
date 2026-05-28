@@ -109,6 +109,16 @@ _COL_SYNONYMS: dict[str, str] = {
     "comments":     "notes",
     "comment":      "notes",
     "remarks":      "notes",
+
+    # serial number
+    "serial":        "serial",
+    "serial_#":      "serial",
+    "serial #":      "serial",
+    "serial#":       "serial",
+    "serial number": "serial",
+    "serialnumber":  "serial",
+    "sn":            "serial",
+    "s/n":           "serial",
 }
 
 
@@ -170,6 +180,11 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
     # Clean meter: parse "5K" → 5000, "736 TOTAL" → 736, "75,664" → 75664
     if "meter" in df.columns:
         df["meter"] = df["meter"].apply(_clean_meter)
+
+    # Normalize serial: strip, uppercase, clear placeholder values
+    if "serial" in df.columns:
+        df["serial"] = df["serial"].fillna("").astype(str).str.strip().str.upper()
+        df["serial"] = df["serial"].replace({"NAN": "", "NONE": "", "N/A": "", "NA": ""})
 
     # Fill NaN with empty string for text columns, 0 for numeric
     for col in OUTPUT_COLUMNS:

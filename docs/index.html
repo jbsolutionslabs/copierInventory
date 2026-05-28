@@ -414,50 +414,53 @@ function saveSettings() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// REFRESH (triggers GitHub Actions workflow_dispatch)
+// REFRESH (reloads inventory.json — no credentials needed)
 // ════════════════════════════════════════════════════════════════════════════
 async function triggerRefresh() {
-  const { owner, repo, token } = loadSettings();
-  if (!owner || !repo || !token) { openSettingsModal(); return; }
-
   const btn = document.getElementById("btn-refresh");
   btn.disabled = true;
-  btn.textContent = "Triggering…";
+  btn.textContent = "Loading…";
+  showSpinner(true);
 
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/actions/workflows/refresh.yml/dispatches`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ref: "main" }),
-      }
-    );
-    if (res.status === 204) {
-      btn.textContent = "✓ Triggered!";
-      btn.classList.add("bg-green-500","text-white");
-      btn.classList.remove("bg-amber-400","text-gray-900");
-      setTimeout(resetRefreshBtn, 4000);
-    } else {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(`${res.status}: ${body.message || "Unknown error"}`);
-    }
+    const res = await fetch("data/inventory.json?_=" + Date.now()); // cache-bust
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    allRecords = data.records || [];
+
+    const updated = data.updated
+      ? new Date(data.updated).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})
+      : "unknown";
+    document.getElementById("meta").textContent =
+      `${data.total.toLocaleString()} machines · ${data.sources?.length ?? "?"} sources · Updated ${updated}`;
+
+    // Rebuild filter dropdowns
+    ["f-source","f-brand","f-condition"].forEach(id => {
+      const sel = document.getElementById(id);
+      while (sel.options.length > 1) sel.remove(1);
+    });
+    populateSelect("f-source",    [...new Set(allRecords.map(r => r.source))].sort());
+    populateSelect("f-brand",     [...new Set(allRecords.map(r => r.brand).filter(Boolean))].sort());
+    populateSelect("f-condition", [...new Set(allRecords.map(r => r.condition).filter(Boolean))].sort());
+
+    applyFilters();
+    btn.textContent = "✓ Reloaded!";
+    btn.classList.add("bg-green-500","text-white");
+    btn.classList.remove("bg-amber-400","text-gray-900");
+    setTimeout(resetRefreshBtn, 3000);
   } catch (err) {
-    btn.textContent = "✗ Error — check settings";
+    btn.textContent = "✗ Error";
     btn.classList.add("bg-red-500","text-white");
     btn.classList.remove("bg-amber-400","text-gray-900");
-    console.error("Refresh error:", err.message);
-    setTimeout(resetRefreshBtn, 4000);
+    console.error("Reload error:", err);
+    setTimeout(resetRefreshBtn, 3000);
+  } finally {
+    showSpinner(false);
+    btn.disabled = false;
   }
 }
 function resetRefreshBtn() {
   const btn = document.getElementById("btn-refresh");
-  btn.disabled = false;
   btn.textContent = "↻ Refresh Data";
   btn.className = "bg-amber-400 hover:bg-amber-300 text-gray-900 font-semibold text-sm px-4 py-2 rounded shadow transition";
 }

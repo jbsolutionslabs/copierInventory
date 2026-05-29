@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Copier Inventory</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <style>
     thead th { position: sticky; top: 0; z-index: 10; }
     th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
@@ -12,10 +13,9 @@
     th.asc::after  { content: " ↑"; opacity: 1; }
     th.desc::after { content: " ↓"; opacity: 1; }
     tbody tr:hover { background-color: #eff6ff !important; }
-    #table-wrap { max-height: calc(100vh - 228px); overflow-y: auto; }
+    #table-wrap { max-height: calc(100vh - 260px); overflow-y: auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner { animation: spin 1s linear infinite; }
-    /* Drop zone highlight */
     #drop-zone.drag-over { border-color: #3b82f6; background: #eff6ff; }
   </style>
 </head>
@@ -28,22 +28,14 @@
     <p id="meta" class="text-blue-200 text-sm mt-0.5">Loading…</p>
   </div>
   <div class="flex items-center gap-2 flex-wrap">
-    <!-- Upload -->
     <button onclick="openUploadModal()"
       class="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-sm px-4 py-2 rounded shadow transition">
-      ↑ Upload File
+      ↑ Uploads
     </button>
-    <!-- Refresh -->
     <button id="btn-refresh" onclick="triggerRefresh()"
       class="bg-amber-400 hover:bg-amber-300 text-gray-900 font-semibold text-sm px-4 py-2 rounded shadow transition">
       ↻ Refresh Data
     </button>
-    <!-- Settings gear -->
-    <button onclick="openSettingsModal()" title="GitHub settings"
-      class="bg-blue-700 hover:bg-blue-600 text-white text-lg px-3 py-2 rounded shadow transition leading-none">
-      ⚙
-    </button>
-    <!-- CSV download -->
     <button id="btn-csv" onclick="downloadCSV()" disabled
       class="bg-white text-blue-900 font-semibold text-sm px-4 py-2 rounded shadow hover:bg-blue-50 transition disabled:opacity-40">
       ⬇ Download CSV
@@ -69,6 +61,11 @@
     <option value="">All Conditions</option>
   </select>
   <button onclick="clearFilters()" class="text-sm text-gray-500 hover:text-gray-800 underline">Clear</button>
+</div>
+
+<!-- ── Manual source banner ────────────────────────────────────────────── -->
+<div id="manual-banner" class="hidden bg-emerald-50 border-b border-emerald-200 px-6 py-2 flex flex-wrap gap-2 items-center text-xs">
+  <span class="font-semibold text-emerald-700 mr-1">Manual sources:</span>
 </div>
 
 <!-- ── Status bar ──────────────────────────────────────────────────────── -->
@@ -102,70 +99,29 @@
 
 
 <!-- ═══════════════════════════════════════════════════════════════════════
-     MODAL: GitHub Settings
-════════════════════════════════════════════════════════════════════════ -->
-<div id="modal-settings" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-    <h2 class="text-lg font-bold text-gray-900 mb-1">GitHub Settings</h2>
-    <p class="text-sm text-gray-500 mb-4">
-      Required for <strong>Refresh</strong> and <strong>Upload</strong>.
-      Create a Personal Access Token at
-      <a href="https://github.com/settings/tokens/new" target="_blank"
-         class="text-blue-600 underline">github.com/settings/tokens/new</a>
-      with <code class="bg-gray-100 px-1 rounded">repo</code> and
-      <code class="bg-gray-100 px-1 rounded">workflow</code> scopes.
-      Your token is stored only in this browser.
-    </p>
-
-    <div class="space-y-3">
-      <div>
-        <label class="block text-xs font-semibold text-gray-600 mb-1">GitHub Username / Org</label>
-        <input id="inp-owner" type="text" placeholder="e.g. your-username"
-          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-600 mb-1">Repository Name</label>
-        <input id="inp-repo" type="text" placeholder="e.g. copierInventory"
-          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-600 mb-1">Personal Access Token</label>
-        <input id="inp-token" type="password" placeholder="ghp_…"
-          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-      </div>
-    </div>
-
-    <div id="settings-error" class="hidden mt-3 text-sm text-red-600"></div>
-
-    <div class="flex justify-end gap-2 mt-5">
-      <button onclick="closeSettingsModal()"
-        class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded border border-gray-300 hover:bg-gray-50">
-        Cancel
-      </button>
-      <button onclick="saveSettings()"
-        class="px-4 py-2 text-sm font-semibold bg-blue-700 text-white rounded hover:bg-blue-800">
-        Save
-      </button>
-    </div>
-  </div>
-</div>
-
-
-<!-- ═══════════════════════════════════════════════════════════════════════
-     MODAL: Upload File
+     MODAL: Uploads / Manage
 ════════════════════════════════════════════════════════════════════════ -->
 <div id="modal-upload" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
-    <h2 class="text-lg font-bold text-gray-900 mb-1">Upload Inventory File</h2>
-    <p class="text-sm text-gray-500 mb-4">
-      Upload a CSV or Excel file from a manual source (TNT, Wulff, Mars, RSI, etc.).
-      The file is committed to the repo's <code class="bg-gray-100 px-1 rounded">imports/</code> folder,
-      then a refresh is triggered automatically.
-    </p>
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-bold text-gray-900">Manual Inventory Files</h2>
+      <button onclick="closeUploadModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+    </div>
 
-    <!-- Drop zone -->
+    <!-- Current uploads -->
+    <div id="current-uploads-section">
+      <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Current uploads</h3>
+      <div id="current-uploads-list" class="space-y-2 mb-5">
+        <p class="text-sm text-gray-400 italic">Loading…</p>
+      </div>
+      <hr class="border-gray-200 mb-5" />
+    </div>
+
+    <!-- Upload new file -->
+    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Add new file</h3>
+
     <div id="drop-zone"
-      class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-400 transition mb-4"
+      class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition mb-4"
       onclick="document.getElementById('file-input').click()"
       ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
       <div id="drop-label">
@@ -179,9 +135,8 @@
     </div>
     <input id="file-input" type="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="onFileChosen(event)" />
 
-    <!-- Source label -->
     <div class="mb-4">
-      <label class="block text-xs font-semibold text-gray-600 mb-1">Source Name (auto-detected, editable)</label>
+      <label class="block text-xs font-semibold text-gray-600 mb-1">Source</label>
       <select id="upload-source"
         class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
         <option value="TNT Copiers">TNT Copiers</option>
@@ -193,25 +148,19 @@
       </select>
     </div>
 
-    <!-- Status -->
-    <div id="upload-status" class="hidden text-sm rounded px-3 py-2 mb-4"></div>
-
-    <!-- Progress bar -->
-    <div id="upload-progress-wrap" class="hidden mb-4">
-      <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div id="upload-progress-bar" class="h-2 bg-blue-500 rounded-full transition-all duration-300" style="width:0%"></div>
-      </div>
-      <p id="upload-progress-label" class="text-xs text-gray-500 mt-1">Uploading…</p>
+    <!-- Progress steps -->
+    <div id="upload-steps" class="hidden mb-4 space-y-1 text-xs text-gray-500">
+      <div id="step-parse">⬜ Parsing file…</div>
+      <div id="step-save">⬜ Saving to server…</div>
+      <div id="step-done">⬜ Done</div>
     </div>
 
-    <div class="flex justify-end gap-2">
-      <button onclick="closeUploadModal()"
-        class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded border border-gray-300 hover:bg-gray-50">
-        Cancel
-      </button>
+    <div id="upload-status" class="hidden text-sm rounded px-3 py-2 mb-4"></div>
+
+    <div class="flex justify-end">
       <button id="btn-do-upload" onclick="doUpload()" disabled
         class="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
-        Upload & Refresh
+        Upload & Save
       </button>
     </div>
   </div>
@@ -222,42 +171,212 @@
      JavaScript
 ════════════════════════════════════════════════════════════════════════ -->
 <script>
-// ── Data state ─────────────────────────────────────────────────────────────
+// ── GitHub config — fill these in before deploying ──────────────────────────
+const GITHUB_OWNER = "jbsolutionslabs";
+const GITHUB_REPO  = "copierInventory";
+const GITHUB_TOKEN = "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";
+
+const MANUAL_JSON_PATH = "docs/data/manual_sources.json";
+const GH_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${MANUAL_JSON_PATH}`;
+const GH_HEADERS = {
+  Authorization: `Bearer ${GITHUB_TOKEN}`,
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
+  "Content-Type": "application/json",
+};
+
+// ── Data state ──────────────────────────────────────────────────────────────
 let allRecords = [];
 let filtered   = [];
 let sortCol    = "source";
 let sortDir    = 1;
 
-// ── Bootstrap: load inventory JSON ─────────────────────────────────────────
+// ── Client-side column normalizer ───────────────────────────────────────────
+const COL_MAP = {
+  "make":"brand","manufacturer":"brand","mfr":"brand","mfg":"brand","oem":"brand",
+  "model":"model","model #":"model","model#":"model","model number":"model",
+  "item":"model","product":"model","machine":"model","unit":"model","equipment":"model","name":"model",
+  "serial":"serial","serial_#":"serial","serial #":"serial","serial number":"serial",
+  "serialnumber":"serial","s/n":"serial","sn":"serial",
+  "condition":"condition","cond":"condition","grade":"condition","quality":"condition",
+  "qty":"qty","quantity":"qty","stock":"qty","available":"qty","count":"qty","units":"qty",
+  "price":"price","cost":"price","sell price":"price","list price":"price","asking":"price","amount":"price",
+  "meter":"meter","total_meter":"meter","total meter":"meter","bw_meter":"meter","bw meter":"meter",
+  "description":"description","accessories":"description",
+  "notes":"notes","comments":"notes","comment":"notes","remarks":"notes",
+};
+
+const BRAND_MAP = {
+  "canon":"Canon","can":"Canon","cnon":"Canon","cnn":"Canon",
+  "ricoh":"Ricoh","ric":"Ricoh","rico":"Ricoh",
+  "kyocera":"Kyocera","kyo":"Kyocera","kyocera-mita":"Kyocera","kyoceramita":"Kyocera",
+  "konica minolta":"Konica Minolta","konica":"Konica Minolta","minolta":"Konica Minolta","konicaminolta":"Konica Minolta","km":"Konica Minolta",
+  "xerox":"Xerox","xrx":"Xerox","xer":"Xerox",
+  "toshiba":"Toshiba","tos":"Toshiba","tosh":"Toshiba",
+  "sharp":"Sharp","sha":"Sharp","shp":"Sharp",
+  "hp":"HP","hewlett":"HP","hewlett-packard":"HP",
+  "lexmark":"Lexmark","lex":"Lexmark",
+  "samsung":"Samsung","sam":"Samsung",
+  "brother":"Brother","bro":"Brother",
+  "epson":"Epson","eps":"Epson",
+  "savin":"Savin","sav":"Savin",
+  "lanier":"Lanier","lan":"Lanier",
+  "gestetner":"Gestetner","ges":"Gestetner",
+  "copystar":"Copystar","cpy":"Copystar",
+  "develop":"Develop","oce":"OCE",
+  "muratec":"Muratec","mur":"Muratec",
+  "panasonic":"Panasonic","pan":"Panasonic",
+  "pitney bowes":"Pitney Bowes","pitney":"Pitney Bowes",
+};
+
+function resolveBrand(raw) {
+  if (!raw) return "";
+  const s = String(raw).toLowerCase().trim();
+  if (BRAND_MAP[s]) return BRAND_MAP[s];
+  const keys = Object.keys(BRAND_MAP).sort((a, b) => b.length - a.length);
+  for (const k of keys) {
+    const re = new RegExp("\\b" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b");
+    if (re.test(s)) return BRAND_MAP[k];
+  }
+  return String(raw).trim();
+}
+
+function normalizeRow(rawRow, sourceName) {
+  const out = { source: sourceName, brand: "", model: "", condition: "", meter: 0, qty: 1, price: 0, description: "", notes: "", serial: "" };
+  for (const [k, v] of Object.entries(rawRow)) {
+    const col = COL_MAP[String(k).toLowerCase().trim()] || String(k).toLowerCase().trim();
+    if (col in out) out[col] = v ?? "";
+  }
+  out.brand  = resolveBrand(out.brand || "");
+  out.serial = String(out.serial || "").trim().toUpperCase();
+  out.qty    = Number(String(out.qty).replace(/[^\d.]/g, "")) || 1;
+  out.price  = parseFloat(String(out.price).replace(/[^\d.]/g, "")) || 0;
+  out.meter  = parseFloat(String(out.meter).replace(/[^\d.]/g, "")) || 0;
+  return out;
+}
+
+// ── GitHub helpers ──────────────────────────────────────────────────────────
+function toB64(str) {
+  // UTF-8 safe base64 encode
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function fromB64(str) {
+  return decodeURIComponent(escape(atob(str.replace(/\n/g, ""))));
+}
+
+async function readManualSourcesFile() {
+  const res = await fetch(GH_API, { headers: GH_HEADERS });
+  if (res.status === 404) return { data: { sources: {} }, sha: null };
+  if (!res.ok) throw new Error(`GitHub read failed: ${res.status}`);
+  const file = await res.json();
+  return { data: JSON.parse(fromB64(file.content)), sha: file.sha };
+}
+
+async function writeManualSourcesFile(data, sha) {
+  const body = {
+    message: `chore: update manual sources`,
+    content: toB64(JSON.stringify(data)),
+    branch: "main",
+    ...(sha ? { sha } : {}),
+  };
+  const res = await fetch(GH_API, { method: "PUT", headers: GH_HEADERS, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub write failed: ${res.status}`);
+  }
+}
+
+// ── Bootstrap ───────────────────────────────────────────────────────────────
 (async () => {
   showSpinner(true);
   try {
-    const res  = await fetch("data/inventory.json");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    allRecords = data.records || [];
+    // Load auto-fetched inventory
+    const autoRes = await fetch("data/inventory.json");
+    if (!autoRes.ok) throw new Error(`HTTP ${autoRes.status}`);
+    const autoData = await autoRes.json();
+    let records = autoData.records || [];
 
-    const updated = data.updated
-      ? new Date(data.updated).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})
+    const updated = autoData.updated
+      ? new Date(autoData.updated).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
       : "unknown";
     document.getElementById("meta").textContent =
-      `${data.total.toLocaleString()} machines · ${data.sources?.length ?? "?"} sources · Updated ${updated}`;
+      `${autoData.total.toLocaleString()} machines from wholesalers · Updated ${updated}`;
 
-    populateSelect("f-source",    [...new Set(allRecords.map(r => r.source))].sort());
-    populateSelect("f-brand",     [...new Set(allRecords.map(r => r.brand).filter(Boolean))].sort());
-    populateSelect("f-condition", [...new Set(allRecords.map(r => r.condition).filter(Boolean))].sort());
+    // Load manual sources and merge
+    const manualRecords = await fetchManualRecords();
+    const manualSources = new Set(manualRecords.map(r => r.source));
+    records = records.filter(r => !manualSources.has(r.source)).concat(manualRecords);
 
-    document.getElementById("btn-csv").disabled = false;
+    allRecords = records;
+    rebuildDropdowns();
+    refreshManualBanner();
     applyFilters();
+    document.getElementById("btn-csv").disabled = false;
   } catch (err) {
-    document.getElementById("meta").textContent = "Error loading inventory data.";
+    document.getElementById("meta").textContent = "Error loading inventory.";
     document.getElementById("count-label").textContent = err.message;
   } finally {
     showSpinner(false);
   }
 })();
 
-// ── Filter + sort ──────────────────────────────────────────────────────────
+async function fetchManualRecords() {
+  try {
+    // Read directly from GitHub Pages (already served as static file)
+    const res = await fetch(`data/manual_sources.json?_=${Date.now()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const records = [];
+    for (const [, entry] of Object.entries(data.sources || {})) {
+      if (entry.records?.length) records.push(...entry.records);
+    }
+    return records;
+  } catch (_) {
+    return [];
+  }
+}
+
+function refreshManualBanner() {
+  fetch(`data/manual_sources.json?_=${Date.now()}`)
+    .then(r => r.ok ? r.json() : { sources: {} })
+    .then(data => {
+      const banner = document.getElementById("manual-banner");
+      const entries = Object.entries(data.sources || {});
+      if (!entries.length) { banner.classList.add("hidden"); return; }
+
+      banner.classList.remove("hidden");
+      const label = `<span class="font-semibold text-emerald-700 mr-1">Manual sources:</span>`;
+      const chips = entries.map(([source, entry]) => {
+        const date = new Date(entry.uploadedAt).toLocaleDateString();
+        const safe = source.replace(/'/g, "\\'");
+        return `<span class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 px-2 py-1 rounded">
+          📄 <strong>${esc(source)}</strong>: ${entry.records?.length ?? 0} machines · ${esc(entry.filename)} · ${date}
+          <button onclick="removeManualSource('${safe}')" class="ml-1 text-red-400 hover:text-red-600 font-bold" title="Remove">×</button>
+        </span>`;
+      }).join("");
+      banner.innerHTML = label + chips;
+    })
+    .catch(() => {});
+}
+
+async function removeManualSource(sourceName) {
+  if (!confirm(`Remove all ${sourceName} machines from the inventory?`)) return;
+  try {
+    const { data, sha } = await readManualSourcesFile();
+    delete data.sources[sourceName];
+    data.updated = new Date().toISOString();
+    await writeManualSourcesFile(data, sha);
+    // Remove from current view immediately
+    allRecords = allRecords.filter(r => r.source !== sourceName);
+    rebuildDropdowns();
+    applyFilters();
+    refreshManualBanner();
+  } catch (err) {
+    alert("Error removing source: " + err.message);
+  }
+}
+
+// ── Filter + sort ───────────────────────────────────────────────────────────
 function applyFilters() {
   const q     = document.getElementById("search").value.trim().toLowerCase();
   const src   = document.getElementById("f-source").value;
@@ -295,19 +414,19 @@ function render() {
   if (!filtered.length) { tbody.innerHTML = ""; empty.classList.remove("hidden"); return; }
   empty.classList.add("hidden");
 
-  const STRIPE = ["bg-white","bg-gray-50"];
+  const STRIPE = ["bg-white", "bg-gray-50"];
   let html = "";
   const limit = Math.min(filtered.length, 2000);
   for (let i = 0; i < limit; i++) {
     const r = filtered[i];
     const price = r.price ? `$${Number(r.price).toLocaleString()}` : "—";
-    html += `<tr class="${STRIPE[i%2]}">
+    html += `<tr class="${STRIPE[i % 2]}">
       <td class="px-4 py-2 whitespace-nowrap text-blue-700 font-medium">${esc(r.source)}</td>
       <td class="px-4 py-2 whitespace-nowrap font-semibold">${esc(r.brand)}</td>
       <td class="px-4 py-2">${esc(r.model)}</td>
       <td class="px-4 py-2 whitespace-nowrap">${condBadge(r.condition)}</td>
       <td class="px-4 py-2 text-right whitespace-nowrap">${fmtMeter(r.meter)}</td>
-      <td class="px-4 py-2 text-right">${Number(r.qty)||1}</td>
+      <td class="px-4 py-2 text-right">${Number(r.qty) || 1}</td>
       <td class="px-4 py-2 text-right whitespace-nowrap">${price}</td>
       <td class="px-4 py-2 text-gray-600 max-w-xs truncate" title="${esc(r.description)}">${esc(r.description)}</td>
       <td class="px-4 py-2 text-gray-500 max-w-xs truncate" title="${esc(r.notes)}">${esc(r.notes)}</td>
@@ -328,137 +447,126 @@ function fmtMeter(val) {
 
 function condBadge(cond) {
   if (!cond) return '<span class="text-gray-400">—</span>';
-  const colors = { Yes:"bg-green-100 text-green-800", Pass:"bg-green-100 text-green-800",
-                   No:"bg-red-100 text-red-700",   Fail:"bg-red-100 text-red-700",
-                   Unk:"bg-yellow-100 text-yellow-800" };
-  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${colors[cond]||"bg-gray-100 text-gray-600"}">${esc(cond)}</span>`;
+  const colors = { Yes: "bg-green-100 text-green-800", Pass: "bg-green-100 text-green-800",
+                   No: "bg-red-100 text-red-700", Fail: "bg-red-100 text-red-700" };
+  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${colors[cond] || "bg-gray-100 text-gray-600"}">${esc(cond)}</span>`;
 }
 
 function esc(s) {
-  return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// ── Sort headers ───────────────────────────────────────────────────────────
+// ── Sort headers ─────────────────────────────────────────────────────────────
 document.querySelectorAll("th.sortable").forEach(th => {
   th.addEventListener("click", () => {
     const col = th.dataset.col;
     sortDir = (sortCol === col) ? sortDir * -1 : 1;
     sortCol = col;
-    document.querySelectorAll("th.sortable").forEach(t => t.classList.remove("asc","desc"));
+    document.querySelectorAll("th.sortable").forEach(t => t.classList.remove("asc", "desc"));
     th.classList.add(sortDir === 1 ? "asc" : "desc");
     sortAndRender();
   });
 });
 
-// ── Misc helpers ───────────────────────────────────────────────────────────
-function populateSelect(id, values) {
-  const sel = document.getElementById(id);
-  values.forEach(v => { const o = document.createElement("option"); o.value = o.textContent = v; sel.appendChild(o); });
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function rebuildDropdowns() {
+  ["f-source", "f-brand", "f-condition"].forEach(id => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
+    let vals = [];
+    if (id === "f-source")    vals = [...new Set(allRecords.map(r => r.source))].sort();
+    if (id === "f-brand")     vals = [...new Set(allRecords.map(r => r.brand).filter(Boolean))].sort();
+    if (id === "f-condition") vals = [...new Set(allRecords.map(r => r.condition).filter(Boolean))].sort();
+    vals.forEach(v => { const o = document.createElement("option"); o.value = o.textContent = v; sel.appendChild(o); });
+    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  });
 }
+
 function clearFilters() {
   document.getElementById("search").value = "";
-  ["f-source","f-brand","f-condition"].forEach(id => document.getElementById(id).value = "");
+  ["f-source", "f-brand", "f-condition"].forEach(id => document.getElementById(id).value = "");
   applyFilters();
 }
+
 function showSpinner(on) {
   document.getElementById("spinner").classList.toggle("hidden", !on);
 }
+
 function downloadCSV() {
-  const cols = ["source","brand","model","condition","meter","qty","price","description","notes"];
+  const cols = ["source", "brand", "model", "condition", "meter", "qty", "price", "description", "notes", "serial"];
   const rows = filtered.map(r => cols.map(c => {
-    const v = String(r[c]??"").replace(/"/g,'""');
+    const v = String(r[c] ?? "").replace(/"/g, '""');
     return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v;
   }).join(","));
-  const blob = new Blob([cols.join(",")+"\n"+rows.join("\n")], {type:"text/csv"});
+  const blob = new Blob([cols.join(",") + "\n" + rows.join("\n")], { type: "text/csv" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `copier-inventory-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `copier-inventory-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// SETTINGS
-// ════════════════════════════════════════════════════════════════════════════
-function loadSettings() {
-  return {
-    owner: localStorage.getItem("gh_owner") || "",
-    repo:  localStorage.getItem("gh_repo")  || "",
-    token: localStorage.getItem("gh_token") || "",
-  };
-}
-function openSettingsModal() {
-  const s = loadSettings();
-  document.getElementById("inp-owner").value = s.owner;
-  document.getElementById("inp-repo").value  = s.repo;
-  document.getElementById("inp-token").value = s.token;
-  document.getElementById("settings-error").classList.add("hidden");
-  document.getElementById("modal-settings").classList.remove("hidden");
-}
-function closeSettingsModal() {
-  document.getElementById("modal-settings").classList.add("hidden");
-}
-function saveSettings() {
-  const owner = document.getElementById("inp-owner").value.trim();
-  const repo  = document.getElementById("inp-repo").value.trim();
-  const token = document.getElementById("inp-token").value.trim();
-  const err   = document.getElementById("settings-error");
-  if (!owner || !repo || !token) {
-    err.textContent = "All three fields are required.";
-    err.classList.remove("hidden");
-    return;
-  }
-  localStorage.setItem("gh_owner", owner);
-  localStorage.setItem("gh_repo",  repo);
-  localStorage.setItem("gh_token", token);
-  closeSettingsModal();
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// REFRESH (reloads inventory.json — no credentials needed)
+// REFRESH
 // ════════════════════════════════════════════════════════════════════════════
 async function triggerRefresh() {
   const btn = document.getElementById("btn-refresh");
   btn.disabled = true;
-  btn.textContent = "Loading…";
   showSpinner(true);
 
+  // First reload current data immediately
   try {
-    const res = await fetch("data/inventory.json?_=" + Date.now()); // cache-bust
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    allRecords = data.records || [];
-
-    const updated = data.updated
-      ? new Date(data.updated).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})
+    btn.textContent = "Reloading…";
+    const [autoRes, manualRecords] = await Promise.all([
+      fetch("data/inventory.json?_=" + Date.now()).then(r => r.json()),
+      fetchManualRecords(),
+    ]);
+    const manualSources = new Set(manualRecords.map(r => r.source));
+    allRecords = (autoRes.records || []).filter(r => !manualSources.has(r.source)).concat(manualRecords);
+    const updated = autoRes.updated
+      ? new Date(autoRes.updated).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
       : "unknown";
     document.getElementById("meta").textContent =
-      `${data.total.toLocaleString()} machines · ${data.sources?.length ?? "?"} sources · Updated ${updated}`;
-
-    // Rebuild filter dropdowns
-    ["f-source","f-brand","f-condition"].forEach(id => {
-      const sel = document.getElementById(id);
-      while (sel.options.length > 1) sel.remove(1);
-    });
-    populateSelect("f-source",    [...new Set(allRecords.map(r => r.source))].sort());
-    populateSelect("f-brand",     [...new Set(allRecords.map(r => r.brand).filter(Boolean))].sort());
-    populateSelect("f-condition", [...new Set(allRecords.map(r => r.condition).filter(Boolean))].sort());
-
+      `${autoRes.total.toLocaleString()} machines from wholesalers · Updated ${updated}`;
+    rebuildDropdowns();
+    refreshManualBanner();
     applyFilters();
-    btn.textContent = "✓ Reloaded!";
-    btn.classList.add("bg-green-500","text-white");
-    btn.classList.remove("bg-amber-400","text-gray-900");
-    setTimeout(resetRefreshBtn, 3000);
   } catch (err) {
-    btn.textContent = "✗ Error";
-    btn.classList.add("bg-red-500","text-white");
-    btn.classList.remove("bg-amber-400","text-gray-900");
     console.error("Reload error:", err);
-    setTimeout(resetRefreshBtn, 3000);
-  } finally {
-    showSpinner(false);
-    btn.disabled = false;
   }
+
+  // Then trigger a fresh scrape via GitHub Actions
+  try {
+    btn.textContent = "Triggering scrape…";
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/refresh.yml/dispatches`,
+      {
+        method: "POST",
+        headers: GH_HEADERS,
+        body: JSON.stringify({ ref: "main" }),
+      }
+    );
+    if (res.status === 204) {
+      btn.textContent = "✓ Scrape triggered!";
+      btn.classList.add("bg-green-500", "text-white");
+      btn.classList.remove("bg-amber-400", "text-gray-900");
+      document.getElementById("meta").textContent += " · New scrape running (~2 min)";
+    } else {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(`${res.status}: ${body.message || "unknown"}`);
+    }
+  } catch (err) {
+    btn.textContent = "✓ Reloaded (scrape trigger failed)";
+    btn.classList.add("bg-yellow-500", "text-white");
+    btn.classList.remove("bg-amber-400", "text-gray-900");
+    console.error("Workflow trigger error:", err.message);
+  }
+
+  showSpinner(false);
+  btn.disabled = false;
+  setTimeout(resetRefreshBtn, 5000);
 }
+
 function resetRefreshBtn() {
   const btn = document.getElementById("btn-refresh");
   btn.textContent = "↻ Refresh Data";
@@ -476,182 +584,188 @@ function openUploadModal() {
   document.getElementById("drop-chosen").classList.add("hidden");
   document.getElementById("btn-do-upload").disabled = true;
   document.getElementById("upload-status").classList.add("hidden");
-  document.getElementById("upload-progress-wrap").classList.add("hidden");
+  document.getElementById("upload-steps").classList.add("hidden");
   document.getElementById("file-input").value = "";
   document.getElementById("modal-upload").classList.remove("hidden");
+  renderCurrentUploads();
+}
+
+async function renderCurrentUploads() {
+  const list = document.getElementById("current-uploads-list");
+  const section = document.getElementById("current-uploads-section");
+  list.innerHTML = '<p class="text-sm text-gray-400 italic">Loading…</p>';
+
+  try {
+    const res = await fetch(`data/manual_sources.json?_=${Date.now()}`);
+    const data = res.ok ? await res.json() : { sources: {} };
+    const entries = Object.entries(data.sources || {});
+
+    if (!entries.length) {
+      list.innerHTML = '<p class="text-sm text-gray-400 italic">No manual files uploaded yet.</p>';
+      return;
+    }
+
+    list.innerHTML = entries.map(([source, entry]) => {
+      const date = new Date(entry.uploadedAt).toLocaleDateString(undefined, { dateStyle: "medium" });
+      const count = entry.records?.length ?? 0;
+      const safe  = source.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      return `
+        <div class="flex items-center justify-between gap-4 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-gray-800 truncate">📄 ${esc(source)}</p>
+            <p class="text-xs text-gray-500 truncate">${esc(entry.filename)} &nbsp;·&nbsp; ${count.toLocaleString()} machines &nbsp;·&nbsp; ${date}</p>
+          </div>
+          <button onclick="removeFromModal('${safe}')"
+            class="shrink-0 text-xs font-medium text-red-500 hover:text-white hover:bg-red-500 border border-red-300 hover:border-red-500 px-3 py-1 rounded transition">
+            Remove
+          </button>
+        </div>`;
+    }).join("");
+  } catch (_) {
+    list.innerHTML = '<p class="text-sm text-red-400">Could not load uploads.</p>';
+  }
+}
+
+async function removeFromModal(sourceName) {
+  if (!confirm(`Remove all ${sourceName} machines from the inventory?`)) return;
+  try {
+    const { data, sha } = await readManualSourcesFile();
+    delete data.sources[sourceName];
+    data.updated = new Date().toISOString();
+    await writeManualSourcesFile(data, sha);
+    allRecords = allRecords.filter(r => r.source !== sourceName);
+    rebuildDropdowns();
+    applyFilters();
+    refreshManualBanner();
+    renderCurrentUploads();
+  } catch (err) {
+    alert("Error removing: " + err.message);
+  }
 }
 function closeUploadModal() {
   document.getElementById("modal-upload").classList.add("hidden");
   chosenFile = null;
 }
 
-// Drag-and-drop
 function onDragOver(e)  { e.preventDefault(); document.getElementById("drop-zone").classList.add("drag-over"); }
 function onDragLeave(e) { document.getElementById("drop-zone").classList.remove("drag-over"); }
 function onDrop(e) {
   e.preventDefault();
   document.getElementById("drop-zone").classList.remove("drag-over");
-  const file = e.dataTransfer.files[0];
-  if (file) setChosenFile(file);
+  const f = e.dataTransfer.files[0];
+  if (f) setChosenFile(f);
 }
 function onFileChosen(e) { const f = e.target.files[0]; if (f) setChosenFile(f); }
 
 function setChosenFile(file) {
-  const allowed = [".csv",".xlsx",".xls"];
   const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  if (!allowed.includes(ext)) {
+  if (![".csv", ".xlsx", ".xls"].includes(ext)) {
     showUploadStatus("Only .csv, .xlsx, .xls files are accepted.", "error");
     return;
   }
   chosenFile = file;
-
-  // Auto-detect source from filename
   const base = file.name.toLowerCase();
-  const sourceMap = {
-    tnt:"TNT Copiers", wulff:"Wulff Enterprises", mars:"Mars",
-    impact:"Impact Networking", intercom:"Intercom Group"
-  };
-  for (const [key, name] of Object.entries(sourceMap)) {
+  const sourceKeys = { tnt: "TNT Copiers", wulff: "Wulff Enterprises", mars: "Mars", impact: "Impact Networking", intercom: "Intercom Group" };
+  for (const [key, name] of Object.entries(sourceKeys)) {
     if (base.includes(key)) { document.getElementById("upload-source").value = name; break; }
   }
-
   document.getElementById("chosen-name").textContent = file.name;
-  document.getElementById("chosen-size").textContent = `${(file.size/1024).toFixed(1)} KB`;
+  document.getElementById("chosen-size").textContent = `${(file.size / 1024).toFixed(1)} KB`;
   document.getElementById("drop-label").classList.add("hidden");
   document.getElementById("drop-chosen").classList.remove("hidden");
   document.getElementById("btn-do-upload").disabled = false;
   document.getElementById("upload-status").classList.add("hidden");
 }
 
+function setStep(id, state) {
+  const el = document.getElementById(id);
+  const icons = { pending: "⬜", active: "⏳", done: "✅", error: "❌" };
+  const labels = { "step-parse": "Parsing file", "step-save": "Saving to server", "step-done": "Done" };
+  el.textContent = `${icons[state] || "⬜"} ${labels[id]}`;
+}
+
 async function doUpload() {
-  const { owner, repo, token } = loadSettings();
-  if (!owner || !repo || !token) {
-    closeUploadModal();
-    openSettingsModal();
-    return;
-  }
   if (!chosenFile) return;
-
-  const btn = document.getElementById("btn-do-upload");
-  btn.disabled = true;
-
-  // Read file as base64
-  setProgress(10, "Reading file…");
-  let base64;
-  try {
-    base64 = await fileToBase64(chosenFile);
-  } catch (e) {
-    showUploadStatus("Could not read file: " + e.message, "error");
-    btn.disabled = false;
-    return;
-  }
-
-  // Check if file already exists in the repo (need SHA to update)
-  setProgress(30, "Checking for existing file…");
-  const filename = sanitizeFilename(chosenFile.name);
-  const apiPath  = `https://api.github.com/repos/${owner}/${repo}/contents/imports/${filename}`;
-  const ghHeaders = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "Content-Type": "application/json",
-  };
-
-  let existingSha = null;
-  try {
-    const check = await fetch(apiPath, { headers: ghHeaders });
-    if (check.status === 200) {
-      const existing = await check.json();
-      // Check if content is identical (GitHub returns base64 with newlines)
-      const existingB64 = existing.content.replace(/\n/g, "");
-      if (existingB64 === base64) {
-        showUploadStatus("This exact file is already in the repo — no changes needed.", "warn");
-        hideProgress();
-        btn.disabled = false;
-        return;
-      }
-      existingSha = existing.sha;
-    }
-  } catch (_) { /* file doesn't exist yet, that's fine */ }
-
-  // Upload (create or update)
-  setProgress(60, existingSha ? "Updating existing file…" : "Uploading file…");
+  const btn        = document.getElementById("btn-do-upload");
   const sourceName = document.getElementById("upload-source").value;
-  const body = {
-    message: `chore: upload ${sourceName} inventory — ${filename}`,
-    content: base64,
-    branch: "main",
-    ...(existingSha ? { sha: existingSha } : {}),
-  };
+  btn.disabled     = true;
+  document.getElementById("upload-status").classList.add("hidden");
+  document.getElementById("upload-steps").classList.remove("hidden");
+  setStep("step-parse", "active");
+  setStep("step-save",  "pending");
+  setStep("step-done",  "pending");
 
   try {
-    const res = await fetch(apiPath, { method: "PUT", headers: ghHeaders, body: JSON.stringify(body) });
-    if (res.status !== 200 && res.status !== 201) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(`${res.status}: ${err.message || "Upload failed"}`);
+    // 1. Parse file
+    const rawRows = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+          resolve(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }));
+        } catch(err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(chosenFile);
+    });
+
+    const records = rawRows
+      .map(row => normalizeRow(row, sourceName))
+      .filter(r => r.model || r.brand);
+
+    if (!records.length) {
+      setStep("step-parse", "error");
+      showUploadStatus("No valid rows found. Check that the file has brand or model columns.", "error");
+      btn.disabled = false;
+      return;
     }
-  } catch (e) {
-    showUploadStatus("Upload failed: " + e.message, "error");
-    hideProgress();
-    btn.disabled = false;
-    return;
-  }
+    setStep("step-parse", "done");
 
-  // Trigger refresh workflow
-  setProgress(85, "Triggering refresh…");
-  try {
-    await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/actions/workflows/refresh.yml/dispatches`,
-      { method:"POST", headers: ghHeaders, body: JSON.stringify({ ref:"main" }) }
-    );
-  } catch (_) { /* non-fatal — file is uploaded even if workflow trigger fails */ }
+    // 2. Read existing manual_sources.json + update this source
+    setStep("step-save", "active");
+    const { data, sha } = await readManualSourcesFile();
+    data.sources = data.sources || {};
+    data.sources[sourceName] = {
+      filename:   chosenFile.name,
+      uploadedAt: new Date().toISOString(),
+      records,
+    };
+    data.updated = new Date().toISOString();
+    await writeManualSourcesFile(data, sha);
+    setStep("step-save", "done");
 
-  setProgress(100, "Done!");
-  setTimeout(() => {
-    hideProgress();
+    // 3. Update local view immediately (don't wait for GitHub Pages to redeploy)
+    allRecords = allRecords.filter(r => r.source !== sourceName).concat(records);
+    rebuildDropdowns();
+    applyFilters();
+    refreshManualBanner();
+    renderCurrentUploads();
+    setStep("step-done", "done");
+
     showUploadStatus(
-      `✓ "${filename}" uploaded successfully${existingSha ? " (updated)" : ""}. ` +
-      "The site will refresh in ~2 minutes.",
+      `✓ ${records.length} machines from "${chosenFile.name}" saved. Data is live for everyone now.`,
       "success"
     );
-    btn.disabled = false;
-  }, 500);
+  } catch (err) {
+    setStep("step-save", "error");
+    showUploadStatus("Upload failed: " + err.message, "error");
+  }
+
+  btn.disabled = false;
 }
 
-// Upload helpers
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload  = () => resolve(reader.result.split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-function sanitizeFilename(name) {
-  return name.replace(/[^a-zA-Z0-9._\-]/g, "_");
-}
-function setProgress(pct, label) {
-  document.getElementById("upload-progress-wrap").classList.remove("hidden");
-  document.getElementById("upload-progress-bar").style.width = pct + "%";
-  document.getElementById("upload-progress-label").textContent = label;
-}
-function hideProgress() {
-  document.getElementById("upload-progress-wrap").classList.add("hidden");
-}
 function showUploadStatus(msg, type) {
   const el = document.getElementById("upload-status");
-  const colors = { success:"bg-green-50 text-green-800 border border-green-200",
-                   error:  "bg-red-50 text-red-700 border border-red-200",
-                   warn:   "bg-yellow-50 text-yellow-800 border border-yellow-200" };
-  el.className = `text-sm rounded px-3 py-2 mb-4 ${colors[type]||""}`;
+  const colors = {
+    success: "bg-green-50 text-green-800 border border-green-200",
+    error:   "bg-red-50 text-red-700 border border-red-200",
+    warn:    "bg-yellow-50 text-yellow-800 border border-yellow-200",
+  };
+  el.className = `text-sm rounded px-3 py-2 mb-4 ${colors[type] || ""}`;
   el.textContent = msg;
   el.classList.remove("hidden");
 }
 
-// Close modals on backdrop click
-document.getElementById("modal-settings").addEventListener("click", e => {
-  if (e.target === e.currentTarget) closeSettingsModal();
-});
 document.getElementById("modal-upload").addEventListener("click", e => {
   if (e.target === e.currentTarget) closeUploadModal();
 });

@@ -137,7 +137,7 @@
 
     <div class="mb-4">
       <label class="block text-xs font-semibold text-gray-600 mb-1">Source</label>
-      <select id="upload-source"
+      <select id="upload-source" onchange="onSourceChange()"
         class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
         <option value="TNT Copiers">TNT Copiers</option>
         <option value="Wulff Enterprises">Wulff Enterprises</option>
@@ -146,6 +146,8 @@
         <option value="Intercom Group">Intercom Group</option>
         <option value="Other">Other…</option>
       </select>
+      <input id="upload-source-custom" type="text" placeholder="Enter source name"
+        class="hidden w-full border border-gray-300 rounded px-3 py-2 text-sm mt-2 focus:outline-none focus:ring-2 focus:ring-blue-400" />
     </div>
 
     <!-- Progress steps -->
@@ -535,6 +537,8 @@ function openUploadModal() {
   document.getElementById("upload-status").classList.add("hidden");
   document.getElementById("upload-steps").classList.add("hidden");
   document.getElementById("file-input").value = "";
+  document.getElementById("upload-source-custom").classList.add("hidden");
+  document.getElementById("upload-source-custom").value = "";
   document.getElementById("modal-upload").classList.remove("hidden");
   renderCurrentUploads();
 }
@@ -598,6 +602,11 @@ function closeUploadModal() {
   chosenFile = null;
 }
 
+function onSourceChange() {
+  const isOther = document.getElementById("upload-source").value === "Other";
+  document.getElementById("upload-source-custom").classList.toggle("hidden", !isOther);
+}
+
 function onDragOver(e)  { e.preventDefault(); document.getElementById("drop-zone").classList.add("drag-over"); }
 function onDragLeave(e) { document.getElementById("drop-zone").classList.remove("drag-over"); }
 function onDrop(e) {
@@ -637,9 +646,16 @@ function setStep(id, state) {
 
 async function doUpload() {
   if (!chosenFile) return;
-  const btn        = document.getElementById("btn-do-upload");
-  const sourceName = document.getElementById("upload-source").value;
-  btn.disabled     = true;
+  const btn = document.getElementById("btn-do-upload");
+  const sel = document.getElementById("upload-source");
+  const sourceName = sel.value === "Other"
+    ? document.getElementById("upload-source-custom").value.trim()
+    : sel.value;
+  if (!sourceName) {
+    showUploadStatus("Please enter a source name.", "error");
+    return;
+  }
+  btn.disabled = true;
   document.getElementById("upload-status").classList.add("hidden");
   document.getElementById("upload-steps").classList.remove("hidden");
   setStep("step-parse", "active");

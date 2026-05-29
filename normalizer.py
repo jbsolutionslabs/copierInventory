@@ -46,9 +46,36 @@ def resolve_brand(raw: str) -> str:
 _COL_SYNONYMS: dict[str, str] = {
     # source-specific ALS columns
     "make":         "brand",
-    "meter":        "meter",
-    "total_meter":  "meter",
-    "bw_meter":     "meter",
+
+    # B&W / total meter (maps to the standard "meter" column)
+    "meter":              "meter",
+    "total_meter":        "meter",
+    "total meter":        "meter",
+    "bw_meter":           "meter",
+    "bw meter":           "meter",
+    "b&w":                "meter",
+    "b&w meter":          "meter",
+    "b&w copies":         "meter",
+    "bw copies":          "meter",
+    "black & white":      "meter",
+    "black and white":    "meter",
+    "black & white meter":"meter",
+    "black and white meter":"meter",
+    "total b&w":          "meter",
+    "total bw":           "meter",
+
+    # Color meter (intermediate; summed with b&w in normalize())
+    "color_meter":        "color_meter",
+    "color meter":        "color_meter",
+    "colour_meter":       "color_meter",
+    "colour meter":       "color_meter",
+    "color copies":       "color_meter",
+    "colour copies":      "color_meter",
+    "clr meter":          "color_meter",
+    "total color":        "color_meter",
+    "total colour":       "color_meter",
+    "color":              "color_meter",
+
     "accessories":  "description",
     "passcopy":     "condition",
     "comment":      "notes",
@@ -176,6 +203,13 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
         df["price"] = pd.to_numeric(
             df["price"].astype(str).str.replace(r"[^\d.]", "", regex=True), errors="coerce"
         )
+
+    # Sum color + B&W meters into total meter when both columns are present
+    if "color_meter" in df.columns:
+        bw_clean  = df.get("meter", pd.Series("", index=df.index)).apply(_clean_meter).fillna(0)
+        clr_clean = df["color_meter"].apply(_clean_meter).fillna(0)
+        df["meter"] = bw_clean + clr_clean
+        df = df.drop(columns=["color_meter"], errors="ignore")
 
     # Clean meter: parse "5K" → 5000, "736 TOTAL" → 736, "75,664" → 75664
     if "meter" in df.columns:

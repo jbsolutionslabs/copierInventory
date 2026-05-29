@@ -189,7 +189,13 @@ const COL_MAP = {
   "condition":"condition","cond":"condition","grade":"condition","quality":"condition",
   "qty":"qty","quantity":"qty","stock":"qty","available":"qty","count":"qty","units":"qty",
   "price":"price","cost":"price","sell price":"price","list price":"price","asking":"price","amount":"price",
-  "meter":"meter","total_meter":"meter","total meter":"meter","bw_meter":"meter","bw meter":"meter",
+  "meter":"meter","total_meter":"meter","total meter":"meter",
+  "bw_meter":"meter","bw meter":"meter","b&w":"meter","b&w meter":"meter",
+  "b&w copies":"meter","bw copies":"meter","black & white":"meter","black and white":"meter",
+  "black & white meter":"meter","black and white meter":"meter","total b&w":"meter","total bw":"meter",
+  "color_meter":"color_meter","color meter":"color_meter","colour_meter":"color_meter","colour meter":"color_meter",
+  "color copies":"color_meter","colour copies":"color_meter","clr meter":"color_meter",
+  "total color":"color_meter","total colour":"color_meter","color":"color_meter",
   "description":"description","accessories":"description",
   "notes":"notes","comments":"notes","comment":"notes","remarks":"notes",
 };
@@ -230,16 +236,19 @@ function resolveBrand(raw) {
 }
 
 function normalizeRow(rawRow, sourceName) {
-  const out = { source: sourceName, brand: "", model: "", condition: "", meter: 0, qty: 1, price: 0, description: "", notes: "", serial: "" };
+  const out = { source: sourceName, brand: "", model: "", condition: "", meter: 0, qty: 1, price: 0, description: "", notes: "", serial: "", color_meter: 0 };
   for (const [k, v] of Object.entries(rawRow)) {
     const col = COL_MAP[String(k).toLowerCase().trim()] || String(k).toLowerCase().trim();
     if (col in out) out[col] = v ?? "";
   }
-  out.brand  = resolveBrand(out.brand || "");
-  out.serial = String(out.serial || "").trim().toUpperCase();
-  out.qty    = Number(String(out.qty).replace(/[^\d.]/g, "")) || 1;
-  out.price  = parseFloat(String(out.price).replace(/[^\d.]/g, "")) || 0;
-  out.meter  = parseFloat(String(out.meter).replace(/[^\d.]/g, "")) || 0;
+  out.brand       = resolveBrand(out.brand || "");
+  out.serial      = String(out.serial || "").trim().toUpperCase();
+  out.qty         = Number(String(out.qty).replace(/[^\d.]/g, "")) || 1;
+  out.price       = parseFloat(String(out.price).replace(/[^\d.]/g, "")) || 0;
+  const bw        = parseFloat(String(out.meter).replace(/[^\d.]/g, "")) || 0;
+  const clr       = parseFloat(String(out.color_meter).replace(/[^\d.]/g, "")) || 0;
+  out.meter       = bw + clr;
+  delete out.color_meter;
   return out;
 }
 

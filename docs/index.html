@@ -171,20 +171,6 @@
      JavaScript
 ════════════════════════════════════════════════════════════════════════ -->
 <script>
-// ── GitHub config — fill these in before deploying ──────────────────────────
-const GITHUB_OWNER = "jbsolutionslabs";
-const GITHUB_REPO  = "copierInventory";
-const GITHUB_TOKEN = "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";
-
-const MANUAL_JSON_PATH = "docs/data/manual_sources.json";
-const GH_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${MANUAL_JSON_PATH}`;
-const GH_HEADERS = {
-  Authorization: `Bearer ${GITHUB_TOKEN}`,
-  Accept: "application/vnd.github+json",
-  "X-GitHub-Api-Version": "2022-11-28",
-  "Content-Type": "application/json",
-};
-
 // ── Data state ──────────────────────────────────────────────────────────────
 let allRecords = [];
 let filtered   = [];
@@ -253,37 +239,6 @@ function normalizeRow(rawRow, sourceName) {
   out.price  = parseFloat(String(out.price).replace(/[^\d.]/g, "")) || 0;
   out.meter  = parseFloat(String(out.meter).replace(/[^\d.]/g, "")) || 0;
   return out;
-}
-
-// ── GitHub helpers ──────────────────────────────────────────────────────────
-function toB64(str) {
-  // UTF-8 safe base64 encode
-  return btoa(unescape(encodeURIComponent(str)));
-}
-function fromB64(str) {
-  return decodeURIComponent(escape(atob(str.replace(/\n/g, ""))));
-}
-
-async function readManualSourcesFile() {
-  const res = await fetch(GH_API, { headers: GH_HEADERS });
-  if (res.status === 404) return { data: { sources: {} }, sha: null };
-  if (!res.ok) throw new Error(`GitHub read failed: ${res.status}`);
-  const file = await res.json();
-  return { data: JSON.parse(fromB64(file.content)), sha: file.sha };
-}
-
-async function writeManualSourcesFile(data, sha) {
-  const body = {
-    message: `chore: update manual sources`,
-    content: toB64(JSON.stringify(data)),
-    branch: "main",
-    ...(sha ? { sha } : {}),
-  };
-  const res = await fetch(GH_API, { method: "PUT", headers: GH_HEADERS, body: JSON.stringify(body) });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `GitHub write failed: ${res.status}`);
-  }
 }
 
 // ── Bootstrap ───────────────────────────────────────────────────────────────
@@ -362,11 +317,12 @@ function refreshManualBanner() {
 async function removeManualSource(sourceName) {
   if (!confirm(`Remove all ${sourceName} machines from the inventory?`)) return;
   try {
-    const { data, sha } = await readManualSourcesFile();
-    delete data.sources[sourceName];
-    data.updated = new Date().toISOString();
-    await writeManualSourcesFile(data, sha);
-    // Remove from current view immediately
+    const r = await fetch("/api/manual", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: sourceName }),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
     allRecords = allRecords.filter(r => r.source !== sourceName);
     rebuildDropdowns();
     applyFilters();
@@ -538,15 +494,8 @@ async function triggerRefresh() {
   // Then trigger a fresh scrape via GitHub Actions
   try {
     btn.textContent = "Triggering scrape…";
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/refresh.yml/dispatches`,
-      {
-        method: "POST",
-        headers: GH_HEADERS,
-        body: JSON.stringify({ ref: "main" }),
-      }
-    );
-    if (res.status === 204) {
+    const res = await fetch("/api/trigger", { method: "POST" });
+    if (res.ok) {
       btn.textContent = "✓ Scrape triggered!";
       btn.classList.add("bg-green-500", "text-white");
       btn.classList.remove("bg-amber-400", "text-gray-900");
@@ -629,10 +578,12 @@ async function renderCurrentUploads() {
 async function removeFromModal(sourceName) {
   if (!confirm(`Remove all ${sourceName} machines from the inventory?`)) return;
   try {
-    const { data, sha } = await readManualSourcesFile();
-    delete data.sources[sourceName];
-    data.updated = new Date().toISOString();
-    await writeManualSourcesFile(data, sha);
+    const r = await fetch("/api/manual", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: sourceName }),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
     allRecords = allRecords.filter(r => r.source !== sourceName);
     rebuildDropdowns();
     applyFilters();
@@ -721,17 +672,14 @@ async function doUpload() {
     }
     setStep("step-parse", "done");
 
-    // 2. Read existing manual_sources.json + update this source
+    // 2. Save to server via API
     setStep("step-save", "active");
-    const { data, sha } = await readManualSourcesFile();
-    data.sources = data.sources || {};
-    data.sources[sourceName] = {
-      filename:   chosenFile.name,
-      uploadedAt: new Date().toISOString(),
-      records,
-    };
-    data.updated = new Date().toISOString();
-    await writeManualSourcesFile(data, sha);
+    const saveRes = await fetch("/api/manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: sourceName, filename: chosenFile.name, records }),
+    });
+    if (!saveRes.ok) { const e = await saveRes.json().catch(() => ({})); throw new Error(e.error || saveRes.status); }
     setStep("step-save", "done");
 
     // 3. Update local view immediately (don't wait for GitHub Pages to redeploy)

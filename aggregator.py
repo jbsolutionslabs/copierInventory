@@ -1,6 +1,7 @@
 # aggregator.py — merges all normalized DataFrames and writes Excel + JSON output
 
 import os
+import re
 import glob
 import json
 import hashlib
@@ -188,9 +189,12 @@ def write_excel(frames: list[pd.DataFrame]) -> str:
 
         for source in master["source"].unique():
             sub = master[master["source"] == source].reset_index(drop=True)
-            sheet_name = source[:31]
+            # Sanitize: Excel forbids \ / * ? : [ ] in sheet names
+            sheet_name = re.sub(r'[\\/*?:\[\]]', '_', source)[:31]
             sub.to_excel(writer, sheet_name=sheet_name, index=False)
-            _style_sheet(writer.sheets[sheet_name])
+            # openpyxl may rename the sheet (e.g. case-conflict → "Copex1");
+            # always reference the last-added sheet rather than by name.
+            _style_sheet(list(writer.sheets.values())[-1])
 
     print(f"\n  Output written to: {out_path}")
     print(f"  Total rows: {len(master)}")

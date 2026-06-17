@@ -45,16 +45,31 @@ def _get_nonce(session: requests.Session) -> str:
     raise RuntimeError("[ALS] Could not find ninja_table_public_nonce on inventory page")
 
 
-def fetch() -> pd.DataFrame:
-    """
-    Download ALS Copiers inventory via WordPress Ninja Tables AJAX API.
-    limit_rows=0 tells Ninja Tables to return all rows with no limit.
-    """
-    session = requests.Session()
-    session.headers.update(HEADERS)
+REST_URL = f"https://alscopiers.com/wp-json/ninja-tables/v1/tables/{TABLE_ID}/public-data"
 
+
+def _parse_rows(data) -> list:
+    """Normalize various Ninja Tables response shapes into a flat list of dicts."""
+    if isinstance(data, list):
+        return [item["value"] if isinstance(item, dict) and "value" in item else item
+                for item in data]
+    if isinstance(data, dict):
+        raw = data.get("data", data.get("rows", []))
+        return [item["value"] if isinstance(item, dict) and "value" in item else item
+                for item in raw]
+    return []
+
+
+def _fetch_via_rest(session: requests.Session) -> list:
+    """Try the Ninja Tables REST endpoint — no nonce required."""
+    resp = session.get(REST_URL, params={"per_page": 9999, "page": 1}, timeout=120)
+    resp.raise_for_status()
+    return _parse_rows(resp.json())
+
+
+def _fetch_via_ajax(session: requests.Session) -> list:
+    """Fall back to the legacy AJAX endpoint using a page-scraped nonce."""
     nonce = _get_nonce(session)
-
     params = {
         "action":          "wp_ajax_ninja_tables_public_action",
         "table_id":        TABLE_ID,
@@ -64,38 +79,46 @@ def fetch() -> pd.DataFrame:
         "limit_rows":      "0",
         "ninja_table_public_nonce": nonce,
     }
-
     ajax_headers = {
         **HEADERS,
         "X-Requested-With": "XMLHttpRequest",
         "Referer": INVENTORY_PAGE,
         "Accept": "application/json, text/javascript, */*; q=0.01",
     }
-
     resp = session.get(AJAX_URL, params=params, headers=ajax_headers, timeout=120)
     resp.raise_for_status()
-
     try:
         data = resp.json()
     except Exception as exc:
         raise RuntimeError(f"[ALS] JSON parse failed: {exc}\nResponse: {resp.text[:500]}")
+    return _parse_rows(data)
 
-    # Ninja Tables returns a list of {"options": ..., "value": {...}} objects
-    if isinstance(data, list):
-        rows = [item["value"] if isinstance(item, dict) and "value" in item else item
-                for item in data]
-    elif isinstance(data, dict):
-        raw_rows = data.get("data", data.get("rows", []))
-        rows = [item["value"] if isinstance(item, dict) and "value" in item else item
-                for item in raw_rows]
-    else:
-        rows = []
+
+def fetch() -> pd.DataFrame:
+    """
+    Download ALS Copiers inventory. Tries the Ninja Tables REST API first
+    (no nonce needed); falls back to the legacy AJAX nonce approach.
+    """
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    rows = []
+    try:
+        rows = _fetch_via_rest(session)
+        if rows:
+            print(f"  [ALS] {len(rows)} rows via REST API.")
+    except Exception as e:
+        print(f"  [ALS] REST failed ({e}), trying AJAX fallback…")
 
     if not rows:
-        print("  [ALS] Warning: AJAX returned 0 rows.")
+        rows = _fetch_via_ajax(session)
+        if rows:
+            print(f"  [ALS] {len(rows)} rows via AJAX.")
+
+    if not rows:
+        print("  [ALS] Warning: 0 rows returned.")
         return pd.DataFrame()
 
-    print(f"  [ALS] {len(rows)} rows fetched.")
     df = pd.DataFrame(rows)
     df["_raw_source"] = SOURCE_NAME
     return df

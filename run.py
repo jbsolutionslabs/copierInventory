@@ -35,6 +35,8 @@ def _fetch_source(key: str) -> list:
             from fetchers.copex import fetch
         elif key == "rsi":
             from fetchers.rsi import fetch
+        elif key == "tnt":
+            from fetchers.tnt import fetch
         else:
             print(f"  No fetcher implemented for '{key}' — skipping.")
             return []

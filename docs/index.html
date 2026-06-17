@@ -1,747 +1,1098 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Copier Inventory</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <style>
-    thead th { position: sticky; top: 0; z-index: 10; }
-    th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-    th.sortable::after { content: " ↕"; opacity: 0.4; font-size: 0.7em; }
-    th.asc::after  { content: " ↑"; opacity: 1; }
-    th.desc::after { content: " ↓"; opacity: 1; }
-    tbody tr:hover { background-color: #eff6ff !important; }
-    #table-wrap { max-height: calc(100vh - 260px); overflow-y: auto; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spinner { animation: spin 1s linear infinite; }
-    #drop-zone.drag-over { border-color: #3b82f6; background: #eff6ff; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Imaging Connection — Inventory Search</title>
+<style>
+:root{--navy:#1F3864;--navy2:#2E5090;--navy3:#4A6FA5;--gold:#C9A84C;--gold2:#F0D080;
+  --bg:#F2F4F8;--wh:#FFFFFF;--bdr:#D0D8E8;--text:#1A2540;--muted:#6B7A99;
+  --green:#1A6B2A;--sh:0 2px 12px rgba(31,56,100,.10)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+
+/* ── Header ── */
+.header{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);padding:13px 22px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 3px 12px rgba(0,0,0,.25)}
+.header h1{color:var(--gold);font-size:18px;font-weight:700;letter-spacing:.4px}
+.header p{color:rgba(255,255,255,.6);font-size:11px;margin-top:2px}
+.hc{color:rgba(255,255,255,.5);font-size:11px;text-align:right;line-height:1.6;display:flex;align-items:center;gap:14px}
+.hc-nums{text-align:right}
+.hc strong{color:var(--gold2);font-size:21px;display:block;font-weight:700;line-height:1.1}
+.new-badge-hdr{display:inline-block;background:#27AE60;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-top:3px}
+.hdr-btns{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── Tabs ── */
+.tabbar{background:var(--navy);display:flex;gap:4px;padding:0 18px;border-bottom:2px solid var(--bdr)}
+.tabbtn{padding:10px 22px;background:transparent;border:none;color:rgba(255,255,255,.6);font-size:13px;font-weight:700;cursor:pointer;border-bottom:3px solid transparent;transition:all .15s}
+.tabbtn.active{color:var(--gold2);border-bottom-color:var(--gold)}
+.tabbtn:hover{color:#fff}
+.tabbtn .pill{display:inline-block;background:#27AE60;color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:6px}
+.tabpane{display:none}
+.tabpane.active{display:block}
+
+/* ── Search panel ── */
+.sp{background:var(--wh);border-bottom:2px solid var(--bdr);padding:11px 18px 12px;box-shadow:var(--sh)}
+.sr{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:10px;font-weight:700;color:var(--navy2);text-transform:uppercase;letter-spacing:.5px}
+.field input,.field select,.field textarea{border:1.5px solid var(--bdr);border-radius:5px;padding:5px 8px;font-size:12px;color:var(--text);background:var(--wh);transition:border-color .15s;font-family:inherit}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--navy3);box-shadow:0 0 0 3px rgba(74,111,165,.15)}
+.fb{flex:0 0 148px}.fm{flex:0 0 185px}.fv{flex:0 0 175px}.fst{flex:0 0 80px}
+.fme{flex:0 0 112px}.fpr{flex:0 0 100px}.fco{flex:0 0 95px}.fsm{flex:0 0 73px}
+.brow{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.btn{padding:6px 15px;border:none;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+.bs{background:var(--navy);color:var(--wh)}.bs:hover{background:var(--navy2)}
+.bc{background:var(--bg);color:var(--muted);border:1.5px solid var(--bdr)}.bc:hover{background:var(--bdr)}
+.be{background:var(--gold);color:var(--navy)}.be:hover{background:var(--gold2)}
+.bn{background:#27AE60;color:#fff}.bn:hover{background:#1E8449}
+.bp{background:#6C3483;color:#fff}.bp:hover{background:#562a6b}
+.tip{color:var(--muted);font-size:11px;font-style:italic}
+
+/* ── Results bar ── */
+.rb{display:flex;align-items:center;justify-content:space-between;padding:6px 18px;background:var(--navy);font-size:11px;color:rgba(255,255,255,.7)}
+.rb .cnt{color:var(--gold2);font-weight:700;font-size:14px}
+.rb .ncnt{color:#6EE09A;font-weight:700}
+
+/* ── Table ── */
+.tw{overflow:auto;max-height:calc(100vh - 300px)}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+thead th{background:var(--navy);color:var(--wh);padding:7px 8px;text-align:left;white-space:nowrap;position:sticky;top:0;z-index:10;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;border-right:1px solid rgba(255,255,255,.1);cursor:pointer;user-select:none}
+thead th:hover{background:var(--navy2)}
+thead th.sa::after{content:" ▲";color:var(--gold2)}
+thead th.sd::after{content:" ▼";color:var(--gold2)}
+thead th.cfg-h{background:#17305a;border-left:2px solid var(--gold)}
+thead th.new-h{background:#1A6B2A;border-left:2px solid #6EE09A}
+tbody tr{border-bottom:1px solid #E8EDF5}
+tbody tr:hover{background:#EEF3FF !important}
+tbody tr.is-new{background:#F0FBF4 !important}
+tbody tr.is-new:hover{background:#E0F7EA !important}
+tbody tr.is-new td:first-child{border-left:3px solid #27AE60}
+tbody td{padding:6px 8px;vertical-align:middle}
+tbody tr:nth-child(even){background:#F8FAFD}
+.tag{display:inline-block;border-radius:8px;padding:1px 6px;font-size:10px;font-weight:600;margin:1px 2px 1px 0;white-space:nowrap}
+.t-feeder{background:#E8F4FD;color:#1A5276;border:1px solid #AED6F1}
+.t-cap{background:#FEF9E7;color:#7D6608;border:1px solid #F9E79F}
+.t-finisher{background:#F5EEF8;color:#6C3483;border:1px solid #D7BDE2}
+.t-print{background:#EAFAF1;color:#1E8449;border:1px solid #A9DFBF}
+.t-scan{background:#EBF5FB;color:#1A5276;border:1px solid #AED6F1}
+.t-fax{background:#FDF2F8;color:#922B21;border:1px solid #F1948A}
+.new-badge{display:inline-block;background:#27AE60;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;letter-spacing:.5px;vertical-align:middle;margin-left:4px;text-transform:uppercase}
+.tv{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;background:var(--navy);color:var(--wh)}
+.tcolor{background:#FFF8E1;color:#8B6914;border:1px solid #F0D080;display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700}
+.tbw{background:#F5F5F5;color:#555;border:1px solid #ccc;display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px}
+.price{color:var(--green);font-weight:700}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.sb{background:#EBF5FB;color:#1A5276;border:1px solid #AED6F1;display:inline-block;padding:1px 5px;border-radius:8px;font-size:10px;font-weight:700}
+.yes{color:#1E8449;font-weight:700}.no{color:#bbb}
+.empty{text-align:center;padding:55px 20px;color:var(--muted)}
+.empty .ico{font-size:34px;margin-bottom:8px}.empty p{font-size:14px}
+.cfg-cell{max-width:220px}
+
+/* ── Watchlist tab ── */
+.wl-wrap{padding:16px 18px}
+.wl-banner{background:linear-gradient(135deg,#1E8449,#27AE60);color:#fff;border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--sh)}
+.wl-banner.zero{background:linear-gradient(135deg,#5D6D7E,#85929E)}
+.wl-banner .big{font-size:20px;font-weight:800}
+.wl-banner .lbl{font-size:11px;opacity:.9;margin-top:2px}
+.wl-form{background:#fff;border:1.5px solid var(--bdr);border-radius:8px;padding:14px;margin-bottom:16px;box-shadow:var(--sh)}
+.wl-form h3{font-size:13px;color:var(--navy);margin-bottom:10px;font-weight:800;letter-spacing:.3px}
+.wl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:10px}
+.wl-grid .wide{grid-column:1/-1}
+.wl-card{background:#fff;border:1.5px solid var(--bdr);border-radius:8px;margin-bottom:10px;overflow:hidden;box-shadow:var(--sh)}
+.wl-card-hdr{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:#F8FAFE}
+.wl-card-hdr:hover{background:#EEF2FA}
+.wl-card-title{font-weight:800;color:var(--navy);font-size:13px}
+.wl-card-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.wl-criteria{font-size:10px;color:var(--navy2);margin-top:4px}
+.wl-criteria .tag{background:#EEF2FB;border:1px solid #C5D5EE;color:var(--navy)}
+.wl-matchcount{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.wl-count-badge{background:#27AE60;color:#fff;font-weight:800;font-size:13px;padding:4px 12px;border-radius:14px;min-width:36px;text-align:center}
+.wl-count-badge.zero{background:#BDC3C7}
+.wl-count-badge.has-new{background:#1E8449;box-shadow:0 0 0 3px rgba(39,174,96,.25)}
+.wl-new-pill{background:#1E8449;color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;text-transform:uppercase}
+.wl-actions{display:flex;gap:6px;flex-wrap:wrap}
+.wl-actions button{padding:4px 10px;font-size:11px;border-radius:5px;border:none;cursor:pointer;font-weight:700}
+.wl-edit{background:#EBF5FB;color:#1A5276}.wl-edit:hover{background:#D6EAF8}
+.wl-del{background:#FDEDEC;color:#922B21}.wl-del:hover{background:#FADBD8}
+.wl-email{background:#EAFAF1;color:#1E8449}.wl-email:hover{background:#D5F5E3}
+.wl-body{padding:0 14px 14px;display:none;border-top:1px solid var(--bdr)}
+.wl-body.open{display:block}
+.wl-body table{margin-top:10px}
+.wl-notes{font-size:11px;color:var(--muted);font-style:italic;margin-top:6px;padding:8px 10px;background:#FFFBEA;border-radius:6px;border:1px solid #F9E79F}
+.wl-empty-cards{text-align:center;padding:40px;color:var(--muted)}
+.wl-empty-cards .ico{font-size:36px;margin-bottom:8px}
+.wl-matches-alert{background:#EAFAF1;border:1.5px solid #A9DFBF;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#1E8449;display:none}
+.wl-matches-alert strong{font-size:14px;display:block;margin-bottom:4px}
+
+/* ── Upload modal ── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:10px;padding:22px 24px;width:520px;max-width:95vw;box-shadow:0 8px 40px rgba(0,0,0,.25)}
+.modal h2{font-size:15px;font-weight:800;color:var(--navy);margin-bottom:14px}
+#drop-zone{border:2px dashed var(--bdr);border-radius:8px;padding:28px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:14px;color:var(--muted)}
+#drop-zone:hover,#drop-zone.drag-over{border-color:var(--navy3);background:#EEF3FF}
+#drop-zone p{font-size:12px;margin-top:6px}
+.modal-row{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+#upload-list{max-height:160px;overflow-y:auto;font-size:11px;margin-bottom:10px}
+.upload-item{padding:4px 8px;background:#F8FAFD;border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+.upload-item .remove{color:#922B21;cursor:pointer;font-size:10px;padding:2px 6px;background:#FADBD8;border-radius:4px;border:none}
+#upload-status{font-size:11px;color:var(--muted);min-height:18px}
+</style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans">
+<body>
 
-<!-- ── Header ─────────────────────────────────────────────────────────── -->
-<header class="bg-blue-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+<!-- ── Header ────────────────────────────────────────────────────────────── -->
+<div class="header">
   <div>
-    <h1 class="text-2xl font-bold tracking-tight">Copier Inventory</h1>
-    <p id="meta" class="text-blue-200 text-sm mt-0.5">Loading…</p>
+    <h1>IMAGING CONNECTION — INVENTORY SEARCH</h1>
+    <p id="meta-line">Loading inventory…</p>
   </div>
-  <div class="flex items-center gap-2 flex-wrap">
-    <button onclick="openUploadModal()"
-      class="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-sm px-4 py-2 rounded shadow transition">
-      ↑ Uploads
-    </button>
-    <button id="btn-refresh" onclick="triggerRefresh()"
-      class="bg-amber-400 hover:bg-amber-300 text-gray-900 font-semibold text-sm px-4 py-2 rounded shadow transition">
-      ↻ Refresh Data
-    </button>
-    <button id="btn-csv" onclick="downloadCSV()" disabled
-      class="bg-white text-blue-900 font-semibold text-sm px-4 py-2 rounded shadow hover:bg-blue-50 transition disabled:opacity-40">
-      ⬇ Download CSV
-    </button>
+  <div class="hc">
+    <div class="hc-nums">
+      <strong id="hdr-total">—</strong>total units
+      <div id="hdr-new" style="display:none"><span class="new-badge-hdr" id="hdr-new-badge"></span></div>
+    </div>
+    <div class="hdr-btns">
+      <button class="btn bc" onclick="openUploadModal()" style="font-size:11px">↑ Uploads</button>
+      <button class="btn be" id="btn-refresh" onclick="triggerRefresh()" style="font-size:11px">↻ Refresh</button>
+      <button class="btn bs" id="btn-csv" onclick="exportCSV()" style="font-size:11px">⬇ Export CSV</button>
+    </div>
   </div>
-</header>
-
-<!-- ── Filters ─────────────────────────────────────────────────────────── -->
-<div class="bg-white border-b border-gray-200 px-6 py-3 flex flex-wrap gap-3 items-center">
-  <input id="search" type="text" placeholder="🔍  Search brand, model, description…"
-    oninput="applyFilters()"
-    class="flex-1 min-w-52 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-  <select id="f-source" onchange="applyFilters()"
-    class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
-    <option value="">All Sources</option>
-  </select>
-  <select id="f-brand" onchange="applyFilters()"
-    class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
-    <option value="">All Brands</option>
-  </select>
-  <select id="f-condition" onchange="applyFilters()"
-    class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
-    <option value="">All Conditions</option>
-  </select>
-  <button onclick="clearFilters()" class="text-sm text-gray-500 hover:text-gray-800 underline">Clear</button>
 </div>
 
-<!-- ── Manual source banner ────────────────────────────────────────────── -->
-<div id="manual-banner" class="hidden bg-emerald-50 border-b border-emerald-200 px-6 py-2 flex flex-wrap gap-2 items-center text-xs">
-  <span class="font-semibold text-emerald-700 mr-1">Manual sources:</span>
+<!-- ── Tabs ─────────────────────────────────────────────────────────────── -->
+<div class="tabbar">
+  <button class="tabbtn active" onclick="showTab('search')">🔍 Inventory Search</button>
+  <button class="tabbtn" onclick="showTab('watch')">👤 Customer Watchlist<span class="pill" id="wl-pill" style="display:none"></span></button>
 </div>
 
-<!-- ── Status bar ──────────────────────────────────────────────────────── -->
-<div class="px-6 py-2 text-sm text-gray-500 flex items-center gap-2">
-  <span id="count-label">—</span>
-  <span id="spinner" class="inline-block w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full spinner hidden"></span>
+<!-- ════════════════════ TAB 1: INVENTORY SEARCH ════════════════════ -->
+<div class="tabpane active" id="tab-search">
+<div class="sp">
+  <div class="sr">
+    <div class="field fb"><label>Brand</label>
+      <select id="fb"><option value="">All Brands</option></select></div>
+    <div class="field fm"><label>Model (contains)</label>
+      <input type="text" id="fm" placeholder="e.g. IM C, 4535, C257"></div>
+    <div class="field fv"><label>Vendor</label>
+      <select id="fv"><option value="">All Vendors</option></select></div>
+    <div class="field fst"><label>State</label>
+      <select id="fst"><option value="">All</option></select></div>
+    <div class="field fme"><label>Max Total Meter</label>
+      <input type="number" id="fme" placeholder="e.g. 200000" min="0"></div>
+    <div class="field fpr"><label>Max Price ($)</label>
+      <input type="number" id="fpr" placeholder="e.g. 1500" min="0"></div>
+    <div class="field fco"><label>Color / B&W</label>
+      <select id="fco">
+        <option value="">Both</option>
+        <option value="YES">Color Only</option>
+        <option value="NO">B&W Only</option></select></div>
+    <div class="field fsm"><label>Finisher</label>
+      <select id="ffin">
+        <option value="">Any</option>
+        <option value="yes">Has Finisher</option>
+        <option value="no">No Finisher</option></select></div>
+    <div class="field fsm"><label>Feeder</label>
+      <select id="ffed">
+        <option value="">Any</option>
+        <option value="yes">Has Feeder</option>
+        <option value="no">No Feeder</option></select></div>
+    <div class="field fsm"><label>Fax</label>
+      <select id="ffax">
+        <option value="">Any</option>
+        <option value="YES">Yes</option>
+        <option value="NO">No</option></select></div>
+    <div class="field fsm"><label>Scan</label>
+      <select id="fscn">
+        <option value="">Any</option>
+        <option value="YES">Yes</option>
+        <option value="NO">No</option></select></div>
+    <div class="field fsm"><label>Show Only</label>
+      <select id="fnew">
+        <option value="">All Items</option>
+        <option value="yes">✚ New Only</option>
+        <option value="no">Existing Only</option></select></div>
+  </div>
+  <div class="brow">
+    <button class="btn bs" onclick="doSearch()">🔍 Search</button>
+    <button class="btn bc" onclick="clearAll()">✕ Clear</button>
+    <button class="btn bn" onclick="showNewOnly()" id="btn-new" style="display:none">✚ Show New Items</button>
+    <button class="btn bp" onclick="saveAsWatchRequest()">⭐ Save as Customer Request</button>
+    <button class="btn be" onclick="exportCSV()">⬇ Export CSV</button>
+    <span class="tip" id="rhint">Enter criteria above and click Search</span>
+  </div>
 </div>
 
-<!-- ── Table ───────────────────────────────────────────────────────────── -->
-<div id="table-wrap" class="px-6 pb-6">
-  <table class="w-full text-sm border-collapse bg-white shadow rounded-lg overflow-hidden">
-    <thead class="bg-blue-900 text-white text-xs uppercase tracking-wide">
-      <tr>
-        <th class="sortable px-4 py-3 text-left"  data-col="source">Source</th>
-        <th class="sortable px-4 py-3 text-left"  data-col="brand">Brand</th>
-        <th class="sortable px-4 py-3 text-left"  data-col="model">Model</th>
-        <th class="sortable px-4 py-3 text-left"  data-col="condition">Cond.</th>
-        <th class="sortable px-4 py-3 text-right" data-col="meter">Meter</th>
-        <th class="sortable px-4 py-3 text-right" data-col="qty">Qty</th>
-        <th class="sortable px-4 py-3 text-right" data-col="price">Price</th>
-        <th class="px-4 py-3 text-left">Description</th>
-        <th class="px-4 py-3 text-left">Notes</th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
+<div class="rb">
+  <span><span class="cnt" id="rcnt">—</span> units &nbsp;<span class="ncnt" id="ncnt-bar"></span></span>
+  <span id="rhint2" style="font-size:11px;color:rgba(255,255,255,.55)"></span>
+</div>
+
+<div class="tw">
+  <table>
+    <thead><tr>
+      <th data-col="isNew" class="new-h">NEW?</th>
+      <th data-col="vendor">Vendor</th>
+      <th data-col="brand">Brand</th>
+      <th data-col="model">Model</th>
+      <th data-col="state">State</th>
+      <th data-col="inv">INV #</th>
+      <th data-col="serial">Serial #</th>
+      <th data-col="total">Total Meter</th>
+      <th data-col="color">Color Meter</th>
+      <th data-col="bw">BW Meter</th>
+      <th data-col="isColor">Color?</th>
+      <th data-col="config" class="cfg-h">⚙ Configuration</th>
+      <th data-col="feederModel">Feeder Type</th>
+      <th data-col="capacity">Capacity</th>
+      <th data-col="finisher">Finisher</th>
+      <th data-col="print">Print</th>
+      <th data-col="scan">Scan</th>
+      <th data-col="fax">Fax</th>
+      <th data-col="price">Price</th>
+      <th data-col="notes">Notes</th>
+    </tr></thead>
+    <tbody id="rb"></tbody>
   </table>
-  <div id="empty-msg" class="hidden text-center text-gray-400 py-16 text-lg">
-    No machines match your filters.
-  </div>
 </div>
+</div><!-- /tab-search -->
 
+<!-- ════════════════════ TAB 2: CUSTOMER WATCHLIST ════════════════════ -->
+<div class="tabpane" id="tab-watch">
+<div class="wl-wrap">
 
-<!-- ═══════════════════════════════════════════════════════════════════════
-     MODAL: Uploads / Manage
-════════════════════════════════════════════════════════════════════════ -->
-<div id="modal-upload" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-xl shadow-2xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-bold text-gray-900">Manual Inventory Files</h2>
-      <button onclick="closeUploadModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+  <!-- Notification: new matches found since last scrape -->
+  <div class="wl-matches-alert" id="wl-matches-alert">
+    <strong id="wl-matches-headline"></strong>
+    <span id="wl-matches-detail"></span>
+  </div>
+
+  <div id="wl-banner" class="wl-banner zero">
+    <div>
+      <div class="big" id="wl-banner-big">No saved customer requests yet</div>
+      <div class="lbl">Add a request below — the page highlights matches the moment inventory updates</div>
     </div>
-
-    <!-- Current uploads -->
-    <div id="current-uploads-section">
-      <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Current uploads</h3>
-      <div id="current-uploads-list" class="space-y-2 mb-5">
-        <p class="text-sm text-gray-400 italic">Loading…</p>
-      </div>
-      <hr class="border-gray-200 mb-5" />
-    </div>
-
-    <!-- Upload new file -->
-    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Add new file</h3>
-
-    <div id="drop-zone"
-      class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition mb-4"
-      onclick="document.getElementById('file-input').click()"
-      ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
-      <div id="drop-label">
-        <p class="text-gray-500 font-medium">Drop file here or <span class="text-blue-600 underline">browse</span></p>
-        <p class="text-xs text-gray-400 mt-1">Accepts .csv, .xlsx, .xls</p>
-      </div>
-      <div id="drop-chosen" class="hidden">
-        <p class="text-blue-700 font-semibold" id="chosen-name"></p>
-        <p class="text-xs text-gray-400 mt-1" id="chosen-size"></p>
-      </div>
-    </div>
-    <input id="file-input" type="file" accept=".csv,.xlsx,.xls" class="hidden" onchange="onFileChosen(event)" />
-
-    <div class="mb-4">
-      <label class="block text-xs font-semibold text-gray-600 mb-1">Source</label>
-      <select id="upload-source" onchange="onSourceChange()"
-        class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
-        <option value="TNT Copiers">TNT Copiers</option>
-        <option value="Wulff Enterprises">Wulff Enterprises</option>
-        <option value="Mars">Mars</option>
-        <option value="Impact Networking">Impact Networking</option>
-        <option value="Intercom Group">Intercom Group</option>
-        <option value="Other">Other…</option>
-      </select>
-      <input id="upload-source-custom" type="text" placeholder="Enter source name"
-        class="hidden w-full border border-gray-300 rounded px-3 py-2 text-sm mt-2 focus:outline-none focus:ring-2 focus:ring-blue-400" />
-    </div>
-
-    <!-- Progress steps -->
-    <div id="upload-steps" class="hidden mb-4 space-y-1 text-xs text-gray-500">
-      <div id="step-parse">⬜ Parsing file…</div>
-      <div id="step-save">⬜ Saving to server…</div>
-      <div id="step-done">⬜ Done</div>
-    </div>
-
-    <div id="upload-status" class="hidden text-sm rounded px-3 py-2 mb-4"></div>
-
-    <div class="flex justify-end">
-      <button id="btn-do-upload" onclick="doUpload()" disabled
-        class="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
-        Upload & Save
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bc" style="font-size:11px" onclick="document.getElementById('wl-import').click()">
+        ⬆ Import List<input type="file" id="wl-import" accept=".json" style="display:none" onchange="importWatchlist(event)">
       </button>
+      <button class="btn be" style="font-size:11px" onclick="exportWatchlist()">⬇ Export List</button>
+    </div>
+  </div>
+
+  <!-- Add / Edit form -->
+  <div class="wl-form">
+    <h3 id="wl-form-title">➕ Add Customer Request</h3>
+    <div class="wl-grid">
+      <div class="field"><label>Customer Name *</label>
+        <input type="text" id="wf-name" placeholder="Jane Smith"></div>
+      <div class="field"><label>Email</label>
+        <input type="text" id="wf-email" placeholder="jane@company.com"></div>
+      <div class="field"><label>Phone</label>
+        <input type="text" id="wf-phone" placeholder="(555) 000-0000"></div>
+      <div class="field"><label>Qty Needed</label>
+        <input type="number" id="wf-qty" placeholder="1" min="1"></div>
+      <div class="field"><label>Brand</label>
+        <select id="wf-brand"><option value="">Any Brand</option></select></div>
+      <div class="field"><label>Model (contains)</label>
+        <input type="text" id="wf-model" placeholder='e.g. "IM C4500"'></div>
+      <div class="field"><label>Max Meter</label>
+        <input type="number" id="wf-meter" placeholder="e.g. 500000" min="0"></div>
+      <div class="field"><label>Max Price ($)</label>
+        <input type="number" id="wf-price" placeholder="leave blank if unknown" min="0"></div>
+      <div class="field"><label>Color / B&W</label>
+        <select id="wf-color">
+          <option value="">Either</option>
+          <option value="YES">Color only</option>
+          <option value="NO">B&W only</option></select></div>
+      <div class="field"><label>State</label>
+        <select id="wf-state"><option value="">Any State</option></select></div>
+      <div class="field"><label>Finisher</label>
+        <select id="wf-finisher">
+          <option value="">Either</option>
+          <option value="yes">Required</option>
+          <option value="no">Not required</option></select></div>
+      <div class="field"><label>Fax</label>
+        <select id="wf-fax">
+          <option value="">Either</option>
+          <option value="YES">Required</option>
+          <option value="NO">Not required</option></select></div>
+      <div class="field wide"><label>Notes / Additional Details</label>
+        <textarea id="wf-notes" rows="2" placeholder="Any other details from your conversation with the customer…"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn bs" onclick="addOrUpdateRequest()">💾 Save Request</button>
+      <button class="btn bc" onclick="resetForm()">✕ Cancel</button>
+      <span id="wf-edit-note" style="font-size:11px;color:var(--muted);font-style:italic"></span>
+    </div>
+  </div>
+
+  <div id="wl-list"></div>
+</div>
+</div><!-- /tab-watch -->
+
+<!-- ── Upload modal ─────────────────────────────────────────────────────── -->
+<div class="modal-bg" id="upload-modal">
+  <div class="modal">
+    <h2>↑ Upload Manual Inventory File</h2>
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="handleDrop(event)">
+      <div style="font-size:28px">📂</div>
+      <p>Click or drag &amp; drop CSV / Excel files here</p>
+      <p style="font-size:10px;margin-top:4px">Supported: .csv, .xlsx, .xls &nbsp;|&nbsp; Include source key in filename (tnt, wulff, mars, rsi, copex…)</p>
+      <input type="file" id="file-input" multiple accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFiles(this.files)">
+    </div>
+    <div id="upload-list"></div>
+    <div id="upload-status"></div>
+    <div class="modal-row">
+      <button class="btn bc" onclick="closeModal()">Cancel</button>
+      <button class="btn bs" id="btn-upload" onclick="uploadFiles()" disabled>Upload Files</button>
     </div>
   </div>
 </div>
 
-
-<!-- ═══════════════════════════════════════════════════════════════════════
-     JavaScript
-════════════════════════════════════════════════════════════════════════ -->
 <script>
-// ── Data state ──────────────────────────────────────────────────────────────
-let allRecords = [];
-let filtered   = [];
-let sortCol    = "source";
-let sortDir    = 1;
+/* ════════════════════════════════════════════════════════════════
+   DATA LOADING
+   ════════════════════════════════════════════════════════════════ */
+let ALL = [], PAYLOAD = null;
+let res = [], sortCol = null, sortDir = 1;
+let dataLoaded = false;
 
-// ── Client-side column normalizer ───────────────────────────────────────────
-const COL_MAP = {
-  "make":"brand","manufacturer":"brand","mfr":"brand","mfg":"brand","oem":"brand",
-  "model":"model","model #":"model","model#":"model","model number":"model",
-  "item":"model","product":"model","machine":"model","unit":"model","equipment":"model","name":"model",
-  "serial":"serial","serial_#":"serial","serial #":"serial","serial number":"serial",
-  "serialnumber":"serial","s/n":"serial","sn":"serial",
-  "condition":"condition","cond":"condition","grade":"condition","quality":"condition",
-  "qty":"qty","quantity":"qty","stock":"qty","available":"qty","count":"qty","units":"qty",
-  "price":"price","cost":"price","sell price":"price","list price":"price","asking":"price","amount":"price",
-  "meter":"meter","total_meter":"meter","total meter":"meter",
-  "bw_meter":"meter","bw meter":"meter","b&w":"meter","b&w meter":"meter",
-  "b&w copies":"meter","bw copies":"meter","black & white":"meter","black and white":"meter",
-  "black & white meter":"meter","black and white meter":"meter","total b&w":"meter","total bw":"meter",
-  "color_meter":"color_meter","color meter":"color_meter","colour_meter":"color_meter","colour meter":"color_meter",
-  "color copies":"color_meter","colour copies":"color_meter","clr meter":"color_meter",
-  "total color":"color_meter","total colour":"color_meter","color":"color_meter",
-  "description":"description","accessories":"description",
-  "notes":"notes","comments":"notes","comment":"notes","remarks":"notes",
-};
-
-const BRAND_MAP = {
-  "canon":"Canon","can":"Canon","cnon":"Canon","cnn":"Canon",
-  "ricoh":"Ricoh","ric":"Ricoh","rico":"Ricoh",
-  "kyocera":"Kyocera","kyo":"Kyocera","kyocera-mita":"Kyocera","kyoceramita":"Kyocera",
-  "konica minolta":"Konica Minolta","konica":"Konica Minolta","minolta":"Konica Minolta","konicaminolta":"Konica Minolta","km":"Konica Minolta",
-  "xerox":"Xerox","xrx":"Xerox","xer":"Xerox",
-  "toshiba":"Toshiba","tos":"Toshiba","tosh":"Toshiba",
-  "sharp":"Sharp","sha":"Sharp","shp":"Sharp",
-  "hp":"HP","hewlett":"HP","hewlett-packard":"HP",
-  "lexmark":"Lexmark","lex":"Lexmark",
-  "samsung":"Samsung","sam":"Samsung",
-  "brother":"Brother","bro":"Brother",
-  "epson":"Epson","eps":"Epson",
-  "savin":"Savin","sav":"Savin",
-  "lanier":"Lanier","lan":"Lanier",
-  "gestetner":"Gestetner","ges":"Gestetner",
-  "copystar":"Copystar","cpy":"Copystar",
-  "develop":"Develop","oce":"OCE",
-  "muratec":"Muratec","mur":"Muratec",
-  "panasonic":"Panasonic","pan":"Panasonic",
-  "pitney bowes":"Pitney Bowes","pitney":"Pitney Bowes",
-};
-
-function resolveBrand(raw) {
-  if (!raw) return "";
-  const s = String(raw).toLowerCase().trim();
-  if (BRAND_MAP[s]) return BRAND_MAP[s];
-  const keys = Object.keys(BRAND_MAP).sort((a, b) => b.length - a.length);
-  for (const k of keys) {
-    const re = new RegExp("\\b" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b");
-    if (re.test(s)) return BRAND_MAP[k];
-  }
-  return String(raw).trim();
-}
-
-function normalizeRow(rawRow, sourceName) {
-  const out = { source: sourceName, brand: "", model: "", condition: "", meter: 0, qty: 1, price: 0, description: "", notes: "", serial: "", color_meter: 0 };
-  for (const [k, v] of Object.entries(rawRow)) {
-    const col = COL_MAP[String(k).toLowerCase().trim()] || String(k).toLowerCase().trim();
-    if (col in out) out[col] = v ?? "";
-  }
-  out.brand       = resolveBrand(out.brand || "");
-  out.serial      = String(out.serial || "").trim().toUpperCase();
-  out.qty         = Number(String(out.qty).replace(/[^\d.]/g, "")) || 1;
-  out.price       = parseFloat(String(out.price).replace(/[^\d.]/g, "")) || 0;
-  const bw        = parseFloat(String(out.meter).replace(/[^\d.]/g, "")) || 0;
-  const clr       = parseFloat(String(out.color_meter).replace(/[^\d.]/g, "")) || 0;
-  out.meter       = bw + clr;
-  delete out.color_meter;
-  return out;
-}
-
-// ── Bootstrap ───────────────────────────────────────────────────────────────
-(async () => {
-  showSpinner(true);
+async function loadData() {
   try {
-    // Load auto-fetched inventory
-    const autoRes = await fetch("data/inventory.json");
-    if (!autoRes.ok) throw new Error(`HTTP ${autoRes.status}`);
-    const autoData = await autoRes.json();
-    let records = autoData.records || [];
-
-    const updated = autoData.updated
-      ? new Date(autoData.updated).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
-      : "unknown";
-    document.getElementById("meta").textContent =
-      `${autoData.total.toLocaleString()} machines from wholesalers · Updated ${updated}`;
-
-    // Load manual sources and merge
-    const manualRecords = await fetchManualRecords();
-    const manualSources = new Set(manualRecords.map(r => r.source));
-    records = records.filter(r => !manualSources.has(r.source)).concat(manualRecords);
-
-    allRecords = records;
-    rebuildDropdowns();
-    refreshManualBanner();
-    applyFilters();
-    document.getElementById("btn-csv").disabled = false;
-  } catch (err) {
-    document.getElementById("meta").textContent = "Error loading inventory.";
-    document.getElementById("count-label").textContent = err.message;
-  } finally {
-    showSpinner(false);
-  }
-})();
-
-async function fetchManualRecords() {
-  try {
-    // Read directly from GitHub Pages (already served as static file)
-    const res = await fetch(`data/manual_sources.json?_=${Date.now()}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    const records = [];
-    for (const [, entry] of Object.entries(data.sources || {})) {
-      if (entry.records?.length) records.push(...entry.records);
-    }
-    return records;
-  } catch (_) {
-    return [];
+    const r = await fetch('data/inventory.json?v=' + Date.now());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    PAYLOAD = await r.json();
+    ALL = PAYLOAD.records || [];
+    dataLoaded = true;
+    populateFilters();
+    updateHeader();
+    checkWatchlistMatches();
+    renderWatchlistPillOnly();
+    // Auto-show all results on load
+    if (ALL.length) doSearch();
+  } catch(e) {
+    document.getElementById('meta-line').textContent = 'Error loading inventory: ' + e.message;
   }
 }
 
-function refreshManualBanner() {
-  fetch(`data/manual_sources.json?_=${Date.now()}`)
-    .then(r => r.ok ? r.json() : { sources: {} })
-    .then(data => {
-      const banner = document.getElementById("manual-banner");
-      const entries = Object.entries(data.sources || {});
-      if (!entries.length) { banner.classList.add("hidden"); return; }
-
-      banner.classList.remove("hidden");
-      const label = `<span class="font-semibold text-emerald-700 mr-1">Manual sources:</span>`;
-      const chips = entries.map(([source, entry]) => {
-        const date = new Date(entry.uploadedAt).toLocaleDateString();
-        const safe = source.replace(/'/g, "\\'");
-        return `<span class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 px-2 py-1 rounded">
-          📄 <strong>${esc(source)}</strong>: ${entry.records?.length ?? 0} machines · ${esc(entry.filename)} · ${date}
-          <button onclick="removeManualSource('${safe}')" class="ml-1 text-red-400 hover:text-red-600 font-bold" title="Remove">×</button>
-        </span>`;
-      }).join("");
-      banner.innerHTML = label + chips;
-    })
-    .catch(() => {});
-}
-
-async function removeManualSource(sourceName) {
-  if (!confirm(`Remove all ${sourceName} machines from the inventory?`)) return;
-  try {
-    const r = await fetch("/api/manual", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: sourceName }),
-    });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
-    allRecords = allRecords.filter(r => r.source !== sourceName);
-    rebuildDropdowns();
-    applyFilters();
-    refreshManualBanner();
-  } catch (err) {
-    alert("Error removing source: " + err.message);
+function updateHeader() {
+  if (!PAYLOAD) return;
+  const d = new Date(PAYLOAD.updated);
+  const dateStr = isNaN(d) ? '' : d.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
+  const src = (PAYLOAD.sources || []).length;
+  document.getElementById('meta-line').textContent =
+    (dateStr ? 'As of ' + dateStr + ' \u00a0|\u00a0 ' : '') + src + ' Vendor' + (src!==1?'s':'') + ' \u00a0|\u00a0 Click any column header to sort';
+  document.getElementById('hdr-total').textContent = (PAYLOAD.total || 0).toLocaleString();
+  if (PAYLOAD.newCount > 0 && PAYLOAD.newSince) {
+    const since = new Date(PAYLOAD.newSince);
+    const sinceStr = isNaN(since) ? '' : since.toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric'});
+    const badge = document.getElementById('hdr-new-badge');
+    badge.textContent = '\u271a ' + PAYLOAD.newCount.toLocaleString() + ' NEW' + (sinceStr ? ' since ' + sinceStr : '');
+    document.getElementById('hdr-new').style.display = 'block';
+    document.getElementById('btn-new').style.display = 'inline-block';
   }
 }
 
-// ── Filter + sort ───────────────────────────────────────────────────────────
-function applyFilters() {
-  const q     = document.getElementById("search").value.trim().toLowerCase();
-  const src   = document.getElementById("f-source").value;
-  const brand = document.getElementById("f-brand").value;
-  const cond  = document.getElementById("f-condition").value;
+function populateFilters() {
+  const brands  = PAYLOAD.brands  || [...new Set(ALL.map(r=>r.brand))].sort();
+  const sources = PAYLOAD.sources || [...new Set(ALL.map(r=>r.vendor))].sort();
+  const states  = PAYLOAD.states  || [...new Set(ALL.map(r=>r.state).filter(Boolean))].sort();
 
-  filtered = allRecords.filter(r => {
-    if (src   && r.source    !== src)   return false;
-    if (brand && r.brand     !== brand) return false;
-    if (cond  && r.condition !== cond)  return false;
-    if (q) {
-      const hay = [r.brand, r.model, r.description, r.notes, r.source].join(" ").toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
+  const fb = document.getElementById('fb');
+  brands.forEach(b => { if(b){const o=document.createElement('option');o.value=o.textContent=b;fb.appendChild(o);} });
+
+  const fv = document.getElementById('fv');
+  sources.forEach(s => { if(s){const o=document.createElement('option');o.value=o.textContent=s;fv.appendChild(o);} });
+
+  const fst = document.getElementById('fst');
+  states.forEach(s => { if(s){const o=document.createElement('option');o.value=o.textContent=s;fst.appendChild(o);} });
+
+  // Watchlist brand/state dropdowns
+  const wfb = document.getElementById('wf-brand');
+  brands.forEach(b => { if(b){const o=document.createElement('option');o.value=o.textContent=b;wfb.appendChild(o);} });
+
+  const wfs = document.getElementById('wf-state');
+  states.forEach(s => { if(s){const o=document.createElement('option');o.value=o.textContent=s;wfs.appendChild(o);} });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TABLE RENDERING
+   ════════════════════════════════════════════════════════════════ */
+function fmt(n) {
+  if (n == null || n === '' || n === 0) return '<span style="color:#ccc">—</span>';
+  const v = parseFloat(n);
+  if (isNaN(v) || v === 0) return '<span style="color:#ccc">—</span>';
+  return v.toLocaleString();
+}
+
+function ynC(v) {
+  if (v === 'YES') return '<span class="yes">\u2713</span>';
+  if (v === 'NO')  return '<span class="no">\u2014</span>';
+  return v ? `<span style="font-size:10px;color:var(--muted)">${v}</span>` : '<span class="no">\u2014</span>';
+}
+
+function hasFed(r) { return !!(r.feederModel && r.feederModel.toUpperCase() !== 'NO' && r.feederModel !== ''); }
+
+function cfgTags(r) {
+  if (!r.config) return '<span style="color:#ccc">\u2014</span>';
+  return r.config.split(' | ').map(t => {
+    const u = t.toUpperCase(); let c = 'tag ';
+    if (/DADF|RADF|ADF|RDF|SADF|SPDF|FEEDER|DP-[0-9]|DF-[0-9]/.test(u)) c += 't-feeder';
+    else if (/DRAWER|TRAY|CAB|LCT/.test(u)) c += 't-cap';
+    else if (/FIN|BOOKLET|STAPLE|STACKER|SR-|FS-|MJ-|FN-/.test(u)) c += 't-finisher';
+    else if (u === 'PRINT') c += 't-print';
+    else if (u === 'SCAN')  c += 't-scan';
+    else if (u === 'FAX')   c += 't-fax';
+    else c += 't-feeder';
+    return `<span class="${c.trim()}">${t}</span>`;
+  }).join('');
+}
+
+function rowHtml(r) {
+  const newCell = r.isNew
+    ? '<td style="text-align:center"><span style="background:#27AE60;color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;display:inline-block">\u271a NEW</span></td>'
+    : '<td style="text-align:center;color:#ccc;font-size:10px">\u2014</td>';
+  const newBadge = r.isNew ? '<span class="new-badge">NEW</span>' : '';
+  const notesTxt = r.notes ? (r.notes.length > 45 ? r.notes.slice(0,45) + '…' : r.notes) : '';
+  return `<tr class="${r.isNew ? 'is-new' : ''}">
+    ${newCell}
+    <td><span class="tv">${r.vendor||''}</span></td>
+    <td><strong>${r.brand||''}</strong>${newBadge}</td>
+    <td>${r.model||''}</td>
+    <td>${r.state ? `<span class="sb">${r.state}</span>` : ''}</td>
+    <td style="color:var(--muted);font-size:10.5px">${r.inv||''}</td>
+    <td style="color:var(--muted);font-size:10.5px">${r.serial||''}</td>
+    <td class="num">${fmt(r.total)}</td>
+    <td class="num">${fmt(r.color)}</td>
+    <td class="num">${fmt(r.bw)}</td>
+    <td>${r.isColor==='YES'?'<span class="tcolor">COLOR</span>':'<span class="tbw">B&amp;W</span>'}</td>
+    <td class="cfg-cell">${cfgTags(r)}</td>
+    <td style="font-size:10.5px">${r.feederModel||'\u2014'}</td>
+    <td style="font-size:10.5px">${r.capacity||'\u2014'}</td>
+    <td style="font-size:10.5px">${r.finisher||'\u2014'}</td>
+    <td style="text-align:center">${ynC(r.print)}</td>
+    <td style="text-align:center">${ynC(r.scan)}</td>
+    <td style="text-align:center">${ynC(r.fax)}</td>
+    <td style="text-align:right">${r.price ? `<span class="price">$${Number(r.price).toLocaleString()}</span>` : ''}</td>
+    <td style="color:var(--muted);font-size:10.5px" title="${(r.notes||'').replace(/"/g,'&quot;')}">${notesTxt}</td>
+  </tr>`;
+}
+
+function wlRowHtml(r) {
+  return `<tr class="${r.isNew ? 'is-new' : ''}">
+    ${r.isNew ? '<td style="text-align:center"><span style="background:#27AE60;color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px">\u271a NEW</span></td>' : '<td style="text-align:center;color:#ccc;font-size:10px">\u2014</td>'}
+    <td><span class="tv">${r.vendor||''}</span></td>
+    <td><strong>${r.brand||''}</strong></td>
+    <td>${r.model||''}</td>
+    <td>${r.state ? `<span class="sb">${r.state}</span>` : ''}</td>
+    <td class="num">${fmt(r.total)}</td>
+    <td>${r.isColor==='YES'?'<span class="tcolor">COLOR</span>':'<span class="tbw">B&amp;W</span>'}</td>
+    <td class="cfg-cell">${cfgTags(r)}</td>
+    <td style="text-align:right">${r.price ? `<span class="price">$${Number(r.price).toLocaleString()}</span>` : ''}</td>
+  </tr>`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SEARCH
+   ════════════════════════════════════════════════════════════════ */
+function doSearch() {
+  if (!dataLoaded) { alert('Inventory still loading…'); return; }
+  const brand  = document.getElementById('fb').value.toLowerCase();
+  const model  = document.getElementById('fm').value.trim().toLowerCase();
+  const vendor = document.getElementById('fv').value.toLowerCase();
+  const state  = document.getElementById('fst').value.toLowerCase();
+  const meter  = document.getElementById('fme').value;
+  const price  = document.getElementById('fpr').value;
+  const color  = document.getElementById('fco').value;
+  const fin    = document.getElementById('ffin').value;
+  const fed    = document.getElementById('ffed').value;
+  const fax    = document.getElementById('ffax').value;
+  const scan   = document.getElementById('fscn').value;
+  const fnew   = document.getElementById('fnew').value;
+  const mm = meter ? parseInt(meter) : null;
+  const mp = price ? parseFloat(price) : null;
+
+  res = ALL.filter(r => {
+    if (brand  && (r.brand||'').toLowerCase()  !== brand)  return false;
+    if (vendor && (r.vendor||'').toLowerCase() !== vendor) return false;
+    if (state  && (r.state||'').toLowerCase()  !== state)  return false;
+    if (model  && !(r.model||'').toLowerCase().includes(model)) return false;
+    if (color  && r.isColor !== color) return false;
+    if (fax    && r.fax !== fax)       return false;
+    if (scan   && r.scan !== scan)     return false;
+    if (fin === 'yes' && !r.finisher)  return false;
+    if (fin === 'no'  && r.finisher)   return false;
+    if (fed === 'yes' && !hasFed(r))   return false;
+    if (fed === 'no'  && hasFed(r))    return false;
+    if (fnew === 'yes' && !r.isNew)    return false;
+    if (fnew === 'no'  && r.isNew)     return false;
+    if (mm != null && r.total != null && r.total > mm) return false;
+    if (mp != null && (r.price == null || r.price > mp)) return false;
     return true;
   });
-  sortAndRender();
-}
-
-function sortAndRender() {
-  filtered.sort((a, b) => {
-    const av = a[sortCol] ?? "", bv = b[sortCol] ?? "";
-    if (typeof av === "number" && typeof bv === "number") return (av - bv) * sortDir;
-    return String(av).localeCompare(String(bv)) * sortDir;
-  });
+  if (sortCol) doSort();
   render();
 }
 
+function showNewOnly() {
+  document.getElementById('fnew').value = 'yes';
+  doSearch();
+}
+
 function render() {
-  const tbody = document.getElementById("tbody");
-  const empty = document.getElementById("empty-msg");
-  document.getElementById("count-label").textContent =
-    `Showing ${filtered.length.toLocaleString()} of ${allRecords.length.toLocaleString()} machines`;
+  const tbody   = document.getElementById('rb');
+  const countEl = document.getElementById('rcnt');
+  const ncntEl  = document.getElementById('ncnt-bar');
+  const hint    = document.getElementById('rhint');
+  const hint2   = document.getElementById('rhint2');
 
-  if (!filtered.length) { tbody.innerHTML = ""; empty.classList.remove("hidden"); return; }
-  empty.classList.add("hidden");
+  countEl.textContent = res.length.toLocaleString();
+  const newInRes = res.filter(r => r.isNew).length;
+  ncntEl.textContent = newInRes > 0 ? `\u271a ${newInRes.toLocaleString()} new` : '';
 
-  const STRIPE = ["bg-white", "bg-gray-50"];
-  let html = "";
-  const limit = Math.min(filtered.length, 2000);
-  for (let i = 0; i < limit; i++) {
-    const r = filtered[i];
-    const price = r.price ? `$${Number(r.price).toLocaleString()}` : "—";
-    html += `<tr class="${STRIPE[i % 2]}">
-      <td class="px-4 py-2 whitespace-nowrap text-blue-700 font-medium">${esc(r.source)}</td>
-      <td class="px-4 py-2 whitespace-nowrap font-semibold">${esc(r.brand)}</td>
-      <td class="px-4 py-2">${esc(r.model)}</td>
-      <td class="px-4 py-2 whitespace-nowrap">${condBadge(r.condition)}</td>
-      <td class="px-4 py-2 text-right whitespace-nowrap">${fmtMeter(r.meter)}</td>
-      <td class="px-4 py-2 text-right">${Number(r.qty) || 1}</td>
-      <td class="px-4 py-2 text-right whitespace-nowrap">${price}</td>
-      <td class="px-4 py-2 text-gray-600 max-w-xs truncate" title="${esc(r.description)}">${esc(r.description)}</td>
-      <td class="px-4 py-2 text-gray-500 max-w-xs truncate" title="${esc(r.notes)}">${esc(r.notes)}</td>
-    </tr>`;
+  if (!res.length) {
+    tbody.innerHTML = '<tr><td colspan="20" class="empty"><div class="ico">🔎</div><p>No units match — try broadening your search</p></td></tr>';
+    hint.textContent = 'No results found';
+    hint2.textContent = '';
+    return;
   }
-  if (filtered.length > 2000) {
-    html += `<tr><td colspan="9" class="text-center text-gray-400 py-4 text-sm">
-      Showing first 2,000 of ${filtered.length.toLocaleString()} — refine search to see more.</td></tr>`;
-  }
-  tbody.innerHTML = html;
+
+  const show = res.slice(0, 2000);
+  const cap = res.length > 2000;
+  hint.textContent = cap
+    ? `Showing first 2,000 of ${res.length.toLocaleString()} — Export CSV for full list`
+    : `${res.length.toLocaleString()} unit${res.length !== 1 ? 's' : ''} found`;
+  hint2.textContent = '';
+  tbody.innerHTML = show.map(rowHtml).join('');
 }
 
-function fmtMeter(val) {
-  const n = Number(val);
-  if (!n || isNaN(n)) return '<span class="text-gray-300">—</span>';
-  return n.toLocaleString();
-}
-
-function condBadge(cond) {
-  if (!cond) return '<span class="text-gray-400">—</span>';
-  const colors = { Yes: "bg-green-100 text-green-800", Pass: "bg-green-100 text-green-800",
-                   No: "bg-red-100 text-red-700", Fail: "bg-red-100 text-red-700" };
-  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${colors[cond] || "bg-gray-100 text-gray-600"}">${esc(cond)}</span>`;
-}
-
-function esc(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-// ── Sort headers ─────────────────────────────────────────────────────────────
-document.querySelectorAll("th.sortable").forEach(th => {
-  th.addEventListener("click", () => {
-    const col = th.dataset.col;
-    sortDir = (sortCol === col) ? sortDir * -1 : 1;
-    sortCol = col;
-    document.querySelectorAll("th.sortable").forEach(t => t.classList.remove("asc", "desc"));
-    th.classList.add(sortDir === 1 ? "asc" : "desc");
-    sortAndRender();
+function clearAll() {
+  ['fb','fm','fv','fst','fme','fpr','fco','ffin','ffed','ffax','fscn','fnew'].forEach(id => {
+    document.getElementById(id).value = '';
   });
+  res = []; sortCol = null; sortDir = 1;
+  document.querySelectorAll('#tab-search thead th').forEach(t => {
+    t.className = t.classList.contains('cfg-h') ? 'cfg-h' : t.classList.contains('new-h') ? 'new-h' : '';
+  });
+  document.getElementById('rcnt').textContent = '—';
+  document.getElementById('ncnt-bar').textContent = '';
+  document.getElementById('rhint').textContent = 'Enter criteria above and click Search';
+  document.getElementById('rb').innerHTML = `<tr><td colspan="20" class="empty">
+    <div class="ico">🔍</div>
+    <p>Enter criteria above and click <strong>Search</strong></p>
+  </td></tr>`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SORT
+   ════════════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#tab-search thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+      document.querySelectorAll('#tab-search thead th').forEach(t => {
+        t.className = t.classList.contains('cfg-h') ? 'cfg-h' : t.classList.contains('new-h') ? 'new-h' : '';
+      });
+      th.className = (th.classList.contains('cfg-h') ? 'cfg-h ' : th.classList.contains('new-h') ? 'new-h ' : '') +
+                     (sortDir === 1 ? 'sa' : 'sd');
+      if (res.length) { doSort(); render(); }
+    });
+  });
+  loadData();
 });
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function rebuildDropdowns() {
-  ["f-source", "f-brand", "f-condition"].forEach(id => {
-    const sel = document.getElementById(id);
-    const cur = sel.value;
-    while (sel.options.length > 1) sel.remove(1);
-    let vals = [];
-    if (id === "f-source")    vals = [...new Set(allRecords.map(r => r.source))].sort();
-    if (id === "f-brand")     vals = [...new Set(allRecords.map(r => r.brand).filter(Boolean))].sort();
-    if (id === "f-condition") vals = [...new Set(allRecords.map(r => r.condition).filter(Boolean))].sort();
-    vals.forEach(v => { const o = document.createElement("option"); o.value = o.textContent = v; sel.appendChild(o); });
-    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+function doSort() {
+  const d = sortDir;
+  res.sort((a, b) => {
+    if (sortCol === 'isNew') return (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0);
+    let av = a[sortCol] ?? '', bv = b[sortCol] ?? '';
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * d;
+    return String(av).localeCompare(String(bv)) * d;
   });
 }
 
-function clearFilters() {
-  document.getElementById("search").value = "";
-  ["f-source", "f-brand", "f-condition"].forEach(id => document.getElementById(id).value = "");
-  applyFilters();
-}
-
-function showSpinner(on) {
-  document.getElementById("spinner").classList.toggle("hidden", !on);
-}
-
-function downloadCSV() {
-  const cols = ["source", "brand", "model", "condition", "meter", "qty", "price", "description", "notes", "serial"];
-  const rows = filtered.map(r => cols.map(c => {
-    const v = String(r[c] ?? "").replace(/"/g, '""');
-    return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v;
-  }).join(","));
-  const blob = new Blob([cols.join(",") + "\n" + rows.join("\n")], { type: "text/csv" });
-  const a = document.createElement("a");
+/* ════════════════════════════════════════════════════════════════
+   EXPORT CSV
+   ════════════════════════════════════════════════════════════════ */
+function exportCSV() {
+  const data = res.length ? res : ALL;
+  if (!data.length) { alert('No data to export. Run a search first or wait for inventory to load.'); return; }
+  const h = ['New?','Vendor','Brand','Model','State','INV#','Serial#','Total Meter',
+    'Color Meter','BW Meter','Color?','Configuration','Feeder Type','Capacity',
+    'Finisher','Print','Scan','Fax','Price','Condition','Notes'];
+  const rows = data.map(r => [
+    r.isNew ? 'NEW' : '', r.vendor, r.brand, r.model, r.state, r.inv, r.serial,
+    r.total ?? '', r.color ?? '', r.bw ?? '', r.isColor, r.config, r.feederModel,
+    r.capacity, r.finisher, r.print, r.scan, r.fax,
+    r.price != null ? r.price : '', r.condition || '', (r.notes || '').replace(/,/g, ';')
+  ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+  const blob = new Blob([[h.join(','), ...rows].join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `copier-inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `IC_Inventory_${new Date().toISOString().slice(0,10)}${res.length ? '_filtered' : '_all'}.csv`;
   a.click();
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// REFRESH
-// ════════════════════════════════════════════════════════════════════════════
-async function triggerRefresh() {
-  const btn = document.getElementById("btn-refresh");
-  btn.disabled = true;
-  showSpinner(true);
+/* ════════════════════════════════════════════════════════════════
+   TABS
+   ════════════════════════════════════════════════════════════════ */
+function showTab(name) {
+  document.querySelectorAll('.tabbtn').forEach((b, i) => {
+    b.classList.toggle('active', (name === 'search' && i === 0) || (name === 'watch' && i === 1));
+  });
+  document.getElementById('tab-search').classList.toggle('active', name === 'search');
+  document.getElementById('tab-watch').classList.toggle('active', name === 'watch');
+  if (name === 'watch') renderWatchlist();
+}
 
-  // First reload current data immediately
+/* ════════════════════════════════════════════════════════════════
+   CUSTOMER WATCHLIST
+   ════════════════════════════════════════════════════════════════ */
+let watchlist = [];
+let editingId = null;
+
+function loadWatchlist() {
   try {
-    btn.textContent = "Reloading…";
-    const [autoRes, manualRecords] = await Promise.all([
-      fetch("data/inventory.json?_=" + Date.now()).then(r => r.json()),
-      fetchManualRecords(),
-    ]);
-    const manualSources = new Set(manualRecords.map(r => r.source));
-    allRecords = (autoRes.records || []).filter(r => !manualSources.has(r.source)).concat(manualRecords);
-    const updated = autoRes.updated
-      ? new Date(autoRes.updated).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
-      : "unknown";
-    document.getElementById("meta").textContent =
-      `${autoRes.total.toLocaleString()} machines from wholesalers · Updated ${updated}`;
-    rebuildDropdowns();
-    refreshManualBanner();
-    applyFilters();
-  } catch (err) {
-    console.error("Reload error:", err);
+    const raw = localStorage.getItem('ic_watchlist');
+    watchlist = raw ? JSON.parse(raw) : [];
+  } catch(e) { watchlist = []; }
+}
+
+function saveWatchlist() {
+  try { localStorage.setItem('ic_watchlist', JSON.stringify(watchlist)); } catch(e) {}
+  // Async sync to server (best-effort; don't block UI)
+  syncWatchlistToServer().catch(() => {});
+}
+
+async function syncWatchlistToServer() {
+  try {
+    await fetch('/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ watchlist }),
+    });
+  } catch(e) { /* server not available — localStorage only */ }
+}
+
+function readForm() {
+  return {
+    name:     document.getElementById('wf-name').value.trim(),
+    email:    document.getElementById('wf-email').value.trim(),
+    phone:    document.getElementById('wf-phone').value.trim(),
+    qty:      document.getElementById('wf-qty').value.trim(),
+    brand:    document.getElementById('wf-brand').value,
+    model:    document.getElementById('wf-model').value.trim(),
+    maxMeter: document.getElementById('wf-meter').value,
+    maxPrice: document.getElementById('wf-price').value,
+    color:    document.getElementById('wf-color').value,
+    state:    document.getElementById('wf-state').value,
+    finisher: document.getElementById('wf-finisher').value,
+    fax:      document.getElementById('wf-fax').value,
+    notes:    document.getElementById('wf-notes').value.trim(),
+  };
+}
+
+function writeForm(req) {
+  document.getElementById('wf-name').value    = req.name    || '';
+  document.getElementById('wf-email').value   = req.email   || '';
+  document.getElementById('wf-phone').value   = req.phone   || '';
+  document.getElementById('wf-qty').value     = req.qty     || '';
+  document.getElementById('wf-brand').value   = req.brand   || '';
+  document.getElementById('wf-model').value   = req.model   || '';
+  document.getElementById('wf-meter').value   = req.maxMeter|| '';
+  document.getElementById('wf-price').value   = req.maxPrice|| '';
+  document.getElementById('wf-color').value   = req.color   || '';
+  document.getElementById('wf-state').value   = req.state   || '';
+  document.getElementById('wf-finisher').value= req.finisher|| '';
+  document.getElementById('wf-fax').value     = req.fax     || '';
+  document.getElementById('wf-notes').value   = req.notes   || '';
+}
+
+function resetForm() {
+  writeForm({});
+  editingId = null;
+  document.getElementById('wf-edit-note').textContent = '';
+  document.getElementById('wl-form-title').textContent = '➕ Add Customer Request';
+}
+
+function addOrUpdateRequest() {
+  const data = readForm();
+  if (!data.name) { alert('Please enter a customer name.'); return; }
+  loadWatchlist();
+  if (editingId) {
+    const idx = watchlist.findIndex(w => w.id === editingId);
+    if (idx > -1) watchlist[idx] = { ...watchlist[idx], ...data };
+  } else {
+    watchlist.push({ id: Date.now(), createdDate: new Date().toISOString().slice(0,10), ...data });
+  }
+  saveWatchlist();
+  resetForm();
+  renderWatchlist();
+}
+
+function editRequest(id) {
+  loadWatchlist();
+  const req = watchlist.find(w => w.id === id);
+  if (!req) return;
+  writeForm(req);
+  editingId = id;
+  document.getElementById('wf-edit-note').textContent = `Editing request for ${req.name} — click Save to update`;
+  document.getElementById('wl-form-title').textContent = '✏️ Edit Customer Request';
+  document.querySelector('.wl-form').scrollIntoView({ behavior: 'smooth' });
+}
+
+function deleteRequest(id) {
+  loadWatchlist();
+  const req = watchlist.find(w => w.id === id);
+  if (!req) return;
+  if (!confirm(`Delete request for "${req.name}"?`)) return;
+  watchlist = watchlist.filter(w => w.id !== id);
+  saveWatchlist();
+  renderWatchlist();
+}
+
+function matchRequest(req) {
+  return ALL.filter(r => {
+    if (req.brand && r.brand !== req.brand) return false;
+    if (req.model && !(r.model||'').toLowerCase().includes(req.model.toLowerCase())) return false;
+    if (req.color && r.isColor !== req.color) return false;
+    if (req.state && r.state !== req.state) return false;
+    if (req.finisher === 'yes' && !r.finisher) return false;
+    if (req.fax === 'YES' && r.fax !== 'YES') return false;
+    if (req.maxMeter && r.total != null && r.total > parseInt(req.maxMeter)) return false;
+    if (req.maxPrice && (r.price == null || r.price > parseFloat(req.maxPrice))) return false;
+    return true;
+  });
+}
+
+function toggleCard(id) {
+  const body = document.getElementById('wlbody-' + id);
+  body.classList.toggle('open');
+}
+
+function criteriaTags(req) {
+  const tags = [];
+  if (req.brand)   tags.push(req.brand);
+  if (req.model)   tags.push(`Model: "${req.model}"`);
+  if (req.maxMeter) tags.push(`\u2264 ${parseInt(req.maxMeter).toLocaleString()} meter`);
+  if (req.maxPrice) tags.push(`\u2264 $${parseFloat(req.maxPrice).toLocaleString()}`);
+  if (req.color === 'YES') tags.push('Color only');
+  if (req.color === 'NO')  tags.push('B&W only');
+  if (req.state)   tags.push(`State: ${req.state}`);
+  if (req.finisher === 'yes') tags.push('Finisher required');
+  if (req.fax === 'YES') tags.push('Fax required');
+  if (req.qty)     tags.push(`Qty: ${req.qty}`);
+  return tags.map(t => `<span class="tag">${t}</span>`).join('');
+}
+
+function emailCustomer(req, matches) {
+  const subject = encodeURIComponent(`Equipment Match Found \u2014 ${req.brand || 'Your Request'} ${req.model || ''}`.trim());
+  let body = `Hi ${req.name.split(' ')[0] || ''},\n\nGood news \u2014 we found ${matches.length} unit(s) matching what you're looking for:\n\n`;
+  matches.slice(0, 10).forEach(m => {
+    body += `\u2022 ${m.brand} ${m.model} \u2014 Meter: ${m.total ? m.total.toLocaleString() : 'N/A'}`;
+    if (m.price) body += ` \u2014 $${Number(m.price).toLocaleString()}`;
+    if (m.state) body += ` \u2014 Located: ${m.state}`;
+    body += '\n';
+  });
+  if (matches.length > 10) body += `\n\u2026and ${matches.length - 10} more.\n`;
+  body += `\nLet me know if you'd like more details or to move forward on any of these.\n\nBest,\nAndy`;
+  window.location.href = `mailto:${req.email || ''}?subject=${subject}&body=${encodeURIComponent(body)}`;
+}
+
+function renderWatchlist() {
+  loadWatchlist();
+  const listEl    = document.getElementById('wl-list');
+  const banner    = document.getElementById('wl-banner');
+  const bannerBig = document.getElementById('wl-banner-big');
+  const pill      = document.getElementById('wl-pill');
+
+  if (!watchlist.length) {
+    listEl.innerHTML = `<div class="wl-empty-cards">
+      <div class="ico">👤</div>
+      <p>No customer requests saved yet. Add one above, or run a search and click <strong>"Save as Customer Request"</strong>.</p>
+    </div>`;
+    banner.className = 'wl-banner zero';
+    bannerBig.textContent = 'No saved customer requests yet';
+    pill.style.display = 'none';
+    return;
   }
 
-  // Then trigger a fresh scrape via GitHub Actions
-  try {
-    btn.textContent = "Triggering scrape…";
-    const res = await fetch("/api/trigger", { method: "POST" });
-    if (res.ok) {
-      btn.textContent = "✓ Scrape triggered!";
-      btn.classList.add("bg-green-500", "text-white");
-      btn.classList.remove("bg-amber-400", "text-gray-900");
-      document.getElementById("meta").textContent += " · New scrape running (~2 min)";
-    } else {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(`${res.status}: ${body.message || "unknown"}`);
+  let totalMatches = 0, totalNewMatches = 0, reqsWithNew = 0;
+  const computed = watchlist.map(req => {
+    const matches    = matchRequest(req);
+    const newMatches = matches.filter(m => m.isNew);
+    totalMatches    += matches.length;
+    totalNewMatches += newMatches.length;
+    if (newMatches.length > 0) reqsWithNew++;
+    return { req, matches, newMatches };
+  });
+
+  if (totalNewMatches > 0) {
+    banner.className = 'wl-banner';
+    bannerBig.innerHTML = `🔔 ${totalNewMatches} NEW unit${totalNewMatches !== 1 ? 's' : ''} just matched ${reqsWithNew} customer request${reqsWithNew !== 1 ? 's' : ''}!`;
+  } else if (totalMatches > 0) {
+    banner.className = 'wl-banner';
+    bannerBig.innerHTML = `${totalMatches} total matching unit${totalMatches !== 1 ? 's' : ''} across ${watchlist.length} saved request${watchlist.length !== 1 ? 's' : ''}`;
+  } else {
+    banner.className = 'wl-banner zero';
+    bannerBig.innerHTML = `${watchlist.length} saved request${watchlist.length !== 1 ? 's' : ''} \u2014 no matches in current inventory yet`;
+  }
+
+  pill.style.display = totalNewMatches > 0 ? 'inline-block' : 'none';
+  pill.textContent   = totalNewMatches > 0 ? `🔔 ${totalNewMatches}` : '';
+
+  computed.sort((a, b) => (b.newMatches.length - a.newMatches.length) || (b.matches.length - a.matches.length));
+
+  listEl.innerHTML = computed.map(({ req, matches, newMatches }) => {
+    const badgeClass = newMatches.length > 0 ? 'has-new' : (matches.length === 0 ? 'zero' : '');
+    const newPill    = newMatches.length > 0 ? `<span class="wl-new-pill">🔔 ${newMatches.length} NEW</span>` : '';
+    const sub        = [req.email, req.phone].filter(Boolean).join('  \u2022  ');
+    const emailBtn   = req.email
+      ? `<button class="wl-email" onclick="event.stopPropagation();emailCustomer(${JSON.stringify(req).replace(/"/g,'&quot;')},${JSON.stringify(matches).replace(/"/g,'&quot;')})">✉ Email Customer</button>`
+      : '';
+
+    const tableRows = matches.length
+      ? `<div style="overflow:auto;max-height:380px"><table><thead><tr>
+          <th class="new-h">NEW?</th><th>Vendor</th><th>Brand</th><th>Model</th><th>State</th>
+          <th>Total Meter</th><th>Color?</th><th class="cfg-h">⚙ Config</th><th>Price</th>
+        </tr></thead><tbody>${matches.slice(0,100).map(wlRowHtml).join('')}</tbody></table></div>
+        ${matches.length > 100 ? `<p class="tip" style="margin-top:6px">Showing first 100 of ${matches.length} matches</p>` : ''}`
+      : `<p class="tip" style="padding:10px 0">No current inventory matches this request yet. You'll see a 🔔 badge here as soon as a match appears.</p>`;
+
+    return `<div class="wl-card">
+      <div class="wl-card-hdr" onclick="toggleCard(${req.id})">
+        <div style="flex:1;min-width:0">
+          <div class="wl-card-title">${req.name} ${newPill}</div>
+          ${sub ? `<div class="wl-card-sub">${sub}</div>` : ''}
+          <div class="wl-criteria">${criteriaTags(req)}</div>
+          ${req.notes ? `<div class="wl-notes">📝 ${req.notes}</div>` : ''}
+        </div>
+        <div class="wl-matchcount">
+          <div style="text-align:center">
+            <div class="wl-count-badge ${badgeClass}">${matches.length}</div>
+            <div style="font-size:9px;color:var(--muted);margin-top:2px">MATCHES</div>
+          </div>
+          <div class="wl-actions">
+            ${emailBtn}
+            <button class="wl-edit" onclick="event.stopPropagation();editRequest(${req.id})">✏ Edit</button>
+            <button class="wl-del" onclick="event.stopPropagation();deleteRequest(${req.id})">🗑 Delete</button>
+          </div>
+        </div>
+      </div>
+      <div class="wl-body" id="wlbody-${req.id}">${tableRows}</div>
+    </div>`;
+  }).join('');
+}
+
+function saveAsWatchRequest() {
+  document.getElementById('wf-brand').value    = document.getElementById('fb').value;
+  document.getElementById('wf-model').value    = document.getElementById('fm').value;
+  document.getElementById('wf-meter').value    = document.getElementById('fme').value;
+  document.getElementById('wf-price').value    = document.getElementById('fpr').value;
+  document.getElementById('wf-color').value    = document.getElementById('fco').value;
+  document.getElementById('wf-state').value    = document.getElementById('fst').value;
+  document.getElementById('wf-finisher').value = document.getElementById('ffin').value === 'yes' ? 'yes' : '';
+  document.getElementById('wf-fax').value      = document.getElementById('ffax').value;
+  showTab('watch');
+  document.querySelector('.wl-form').scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('wf-name').focus();
+}
+
+function exportWatchlist() {
+  loadWatchlist();
+  if (!watchlist.length) { alert('No saved requests to export yet.'); return; }
+  const blob = new Blob([JSON.stringify(watchlist, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `IC_Customer_Watchlist_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+function importWatchlist(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!Array.isArray(imported)) throw new Error('bad format');
+      loadWatchlist();
+      const existingIds = new Set(watchlist.map(w => w.id));
+      imported.forEach(req => {
+        if (existingIds.has(req.id)) req.id = Date.now() + Math.floor(Math.random() * 1000);
+        watchlist.push(req);
+      });
+      saveWatchlist();
+      renderWatchlist();
+      alert(`Imported ${imported.length} customer request(s).`);
+    } catch(err) {
+      alert("Could not read that file — please make sure it's a Watchlist JSON export.");
     }
-  } catch (err) {
-    btn.textContent = "✓ Reloaded (scrape trigger failed)";
-    btn.classList.add("bg-yellow-500", "text-white");
-    btn.classList.remove("bg-amber-400", "text-gray-900");
-    console.error("Workflow trigger error:", err.message);
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+/* Notification: load watchlist_matches.json written by Python after scrape */
+async function checkWatchlistMatches() {
+  try {
+    // Use no-store to avoid cached 404, and check ok before parsing
+    const r = await fetch('data/watchlist_matches.json', { cache: 'no-store' });
+    if (!r.ok) return; // file doesn't exist yet — silently skip
+    const data = await r.json();
+    if (!data.totalNewMatches || !data.requests || !data.requests.length) return;
+    // Show alert banner
+    const alert = document.getElementById('wl-matches-alert');
+    const headline = document.getElementById('wl-matches-headline');
+    const detail   = document.getElementById('wl-matches-detail');
+    headline.textContent = `🔔 ${data.totalNewMatches} new match${data.totalNewMatches !== 1 ? 'es' : ''} found across ${data.requests.length} customer request${data.requests.length !== 1 ? 's' : ''}!`;
+    detail.textContent   = `Checked at: ${new Date(data.checkedAt).toLocaleString()} — switch to Customer Watchlist tab to review and email customers.`;
+    alert.style.display = 'block';
+    // Update pill
+    const pill = document.getElementById('wl-pill');
+    pill.style.display = 'inline-block';
+    pill.textContent = `🔔 ${data.totalNewMatches}`;
+  } catch(e) { /* no match file yet — that's fine */ }
+}
+
+function renderWatchlistPillOnly() {
+  loadWatchlist();
+  if (!watchlist.length || !ALL.length) return;
+  let totalNew = 0;
+  watchlist.forEach(req => { totalNew += matchRequest(req).filter(m => m.isNew).length; });
+  if (totalNew > 0) {
+    const pill = document.getElementById('wl-pill');
+    pill.style.display = 'inline-block';
+    pill.textContent = `🔔 ${totalNew}`;
   }
-
-  showSpinner(false);
-  btn.disabled = false;
-  setTimeout(resetRefreshBtn, 5000);
 }
 
-function resetRefreshBtn() {
-  const btn = document.getElementById("btn-refresh");
-  btn.textContent = "↻ Refresh Data";
-  btn.className = "bg-amber-400 hover:bg-amber-300 text-gray-900 font-semibold text-sm px-4 py-2 rounded shadow transition";
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// FILE UPLOAD
-// ════════════════════════════════════════════════════════════════════════════
-let chosenFile = null;
+/* ════════════════════════════════════════════════════════════════
+   UPLOAD MODAL
+   ════════════════════════════════════════════════════════════════ */
+let uploadFiles_ = [];
 
 function openUploadModal() {
-  chosenFile = null;
-  document.getElementById("drop-label").classList.remove("hidden");
-  document.getElementById("drop-chosen").classList.add("hidden");
-  document.getElementById("btn-do-upload").disabled = true;
-  document.getElementById("upload-status").classList.add("hidden");
-  document.getElementById("upload-steps").classList.add("hidden");
-  document.getElementById("file-input").value = "";
-  document.getElementById("upload-source-custom").classList.add("hidden");
-  document.getElementById("upload-source-custom").value = "";
-  document.getElementById("modal-upload").classList.remove("hidden");
-  renderCurrentUploads();
+  uploadFiles_ = [];
+  document.getElementById('upload-list').innerHTML = '';
+  document.getElementById('upload-status').textContent = '';
+  document.getElementById('btn-upload').disabled = true;
+  document.getElementById('upload-modal').classList.add('open');
 }
 
-async function renderCurrentUploads() {
-  const list = document.getElementById("current-uploads-list");
-  const section = document.getElementById("current-uploads-section");
-  list.innerHTML = '<p class="text-sm text-gray-400 italic">Loading…</p>';
-
-  try {
-    const res = await fetch(`data/manual_sources.json?_=${Date.now()}`);
-    const data = res.ok ? await res.json() : { sources: {} };
-    const entries = Object.entries(data.sources || {});
-
-    if (!entries.length) {
-      list.innerHTML = '<p class="text-sm text-gray-400 italic">No manual files uploaded yet.</p>';
-      return;
-    }
-
-    list.innerHTML = entries.map(([source, entry]) => {
-      const date = new Date(entry.uploadedAt).toLocaleDateString(undefined, { dateStyle: "medium" });
-      const count = entry.records?.length ?? 0;
-      const safe  = source.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-      return `
-        <div class="flex items-center justify-between gap-4 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg">
-          <div class="min-w-0">
-            <p class="text-sm font-semibold text-gray-800 truncate">📄 ${esc(source)}</p>
-            <p class="text-xs text-gray-500 truncate">${esc(entry.filename)} &nbsp;·&nbsp; ${count.toLocaleString()} machines &nbsp;·&nbsp; ${date}</p>
-          </div>
-          <button onclick="removeFromModal('${safe}')"
-            class="shrink-0 text-xs font-medium text-red-500 hover:text-white hover:bg-red-500 border border-red-300 hover:border-red-500 px-3 py-1 rounded transition">
-            Remove
-          </button>
-        </div>`;
-    }).join("");
-  } catch (_) {
-    list.innerHTML = '<p class="text-sm text-red-400">Could not load uploads.</p>';
-  }
+function closeModal() {
+  document.getElementById('upload-modal').classList.remove('open');
 }
 
-async function removeFromModal(sourceName) {
-  if (!confirm(`Remove all ${sourceName} machines from the inventory?`)) return;
-  try {
-    const r = await fetch("/api/manual", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: sourceName }),
-    });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
-    allRecords = allRecords.filter(r => r.source !== sourceName);
-    rebuildDropdowns();
-    applyFilters();
-    refreshManualBanner();
-    renderCurrentUploads();
-  } catch (err) {
-    alert("Error removing: " + err.message);
-  }
-}
-function closeUploadModal() {
-  document.getElementById("modal-upload").classList.add("hidden");
-  chosenFile = null;
-}
-
-function onSourceChange() {
-  const isOther = document.getElementById("upload-source").value === "Other";
-  document.getElementById("upload-source-custom").classList.toggle("hidden", !isOther);
-}
-
-function onDragOver(e)  { e.preventDefault(); document.getElementById("drop-zone").classList.add("drag-over"); }
-function onDragLeave(e) { document.getElementById("drop-zone").classList.remove("drag-over"); }
-function onDrop(e) {
+function handleDrop(e) {
   e.preventDefault();
-  document.getElementById("drop-zone").classList.remove("drag-over");
-  const f = e.dataTransfer.files[0];
-  if (f) setChosenFile(f);
-}
-function onFileChosen(e) { const f = e.target.files[0]; if (f) setChosenFile(f); }
-
-function setChosenFile(file) {
-  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  if (![".csv", ".xlsx", ".xls"].includes(ext)) {
-    showUploadStatus("Only .csv, .xlsx, .xls files are accepted.", "error");
-    return;
-  }
-  chosenFile = file;
-  const base = file.name.toLowerCase();
-  const sourceKeys = { tnt: "TNT Copiers", wulff: "Wulff Enterprises", mars: "Mars", impact: "Impact Networking", intercom: "Intercom Group" };
-  for (const [key, name] of Object.entries(sourceKeys)) {
-    if (base.includes(key)) { document.getElementById("upload-source").value = name; break; }
-  }
-  document.getElementById("chosen-name").textContent = file.name;
-  document.getElementById("chosen-size").textContent = `${(file.size / 1024).toFixed(1)} KB`;
-  document.getElementById("drop-label").classList.add("hidden");
-  document.getElementById("drop-chosen").classList.remove("hidden");
-  document.getElementById("btn-do-upload").disabled = false;
-  document.getElementById("upload-status").classList.add("hidden");
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
 }
 
-function setStep(id, state) {
-  const el = document.getElementById(id);
-  const icons = { pending: "⬜", active: "⏳", done: "✅", error: "❌" };
-  const labels = { "step-parse": "Parsing file", "step-save": "Saving to server", "step-done": "Done" };
-  el.textContent = `${icons[state] || "⬜"} ${labels[id]}`;
+function handleFiles(files) {
+  Array.from(files).forEach(f => {
+    if (uploadFiles_.find(u => u.name === f.name)) return;
+    uploadFiles_.push(f);
+  });
+  renderUploadList();
 }
 
-async function doUpload() {
-  if (!chosenFile) return;
-  const btn = document.getElementById("btn-do-upload");
-  const sel = document.getElementById("upload-source");
-  const sourceName = sel.value === "Other"
-    ? document.getElementById("upload-source-custom").value.trim()
-    : sel.value;
-  if (!sourceName) {
-    showUploadStatus("Please enter a source name.", "error");
-    return;
-  }
-  btn.disabled = true;
-  document.getElementById("upload-status").classList.add("hidden");
-  document.getElementById("upload-steps").classList.remove("hidden");
-  setStep("step-parse", "active");
-  setStep("step-save",  "pending");
-  setStep("step-done",  "pending");
+function renderUploadList() {
+  const el = document.getElementById('upload-list');
+  el.innerHTML = uploadFiles_.map((f, i) => `
+    <div class="upload-item">
+      <span>${f.name} <span style="color:var(--muted)">(${(f.size/1024).toFixed(1)} KB)</span></span>
+      <button class="remove" onclick="removeUpload(${i})">✕ Remove</button>
+    </div>`).join('');
+  document.getElementById('btn-upload').disabled = !uploadFiles_.length;
+}
 
-  try {
-    // 1. Parse file
-    const rawRows = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        try {
-          const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
-          resolve(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }));
-        } catch(err) { reject(err); }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(chosenFile);
-    });
+function removeUpload(i) {
+  uploadFiles_.splice(i, 1);
+  renderUploadList();
+}
 
-    const records = rawRows
-      .map(row => normalizeRow(row, sourceName))
-      .filter(r => r.model || r.brand);
-
-    if (!records.length) {
-      setStep("step-parse", "error");
-      showUploadStatus("No valid rows found. Check that the file has brand or model columns.", "error");
-      btn.disabled = false;
-      return;
+async function uploadFiles() {
+  if (!uploadFiles_.length) return;
+  const statusEl = document.getElementById('upload-status');
+  statusEl.textContent = 'Uploading…';
+  let successCount = 0;
+  for (const file of uploadFiles_) {
+    try {
+      const ext = file.name.split('.').pop().toLowerCase();
+      let records;
+      if (ext === 'csv') {
+        const text = await file.text();
+        records = parseCSV(text);
+      } else {
+        statusEl.textContent = `Skipped ${file.name} — use CSV format for uploads (convert Excel to CSV first)`;
+        continue;
+      }
+      const sourceName = inferSource(file.name);
+      const r = await fetch('/api/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: sourceName, filename: file.name, records }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || r.status);
+      successCount++;
+      statusEl.textContent = `Uploaded ${file.name} (${records.length} rows) as "${sourceName}"`;
+    } catch(e) {
+      statusEl.textContent = `Error uploading ${file.name}: ${e.message}`;
     }
-    setStep("step-parse", "done");
-
-    // 2. Save to server via API
-    setStep("step-save", "active");
-    const saveRes = await fetch("/api/manual", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: sourceName, filename: chosenFile.name, records }),
-    });
-    if (!saveRes.ok) { const e = await saveRes.json().catch(() => ({})); throw new Error(e.error || saveRes.status); }
-    setStep("step-save", "done");
-
-    // 3. Update local view immediately (don't wait for GitHub Pages to redeploy)
-    allRecords = allRecords.filter(r => r.source !== sourceName).concat(records);
-    rebuildDropdowns();
-    applyFilters();
-    refreshManualBanner();
-    renderCurrentUploads();
-    setStep("step-done", "done");
-
-    showUploadStatus(
-      `✓ ${records.length} machines from "${chosenFile.name}" saved. Data is live for everyone now.`,
-      "success"
-    );
-  } catch (err) {
-    setStep("step-save", "error");
-    showUploadStatus("Upload failed: " + err.message, "error");
   }
-
-  btn.disabled = false;
+  if (successCount) {
+    statusEl.textContent = `${successCount} file(s) uploaded. Triggering refresh…`;
+    await triggerRefresh();
+  }
 }
 
-function showUploadStatus(msg, type) {
-  const el = document.getElementById("upload-status");
-  const colors = {
-    success: "bg-green-50 text-green-800 border border-green-200",
-    error:   "bg-red-50 text-red-700 border border-red-200",
-    warn:    "bg-yellow-50 text-yellow-800 border border-yellow-200",
-  };
-  el.className = `text-sm rounded px-3 py-2 mb-4 ${colors[type] || ""}`;
-  el.textContent = msg;
-  el.classList.remove("hidden");
+function parseCSV(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  if (!lines.length) return [];
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  return lines.slice(1).map(line => {
+    const cols = line.split(',');
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (cols[i] || '').trim().replace(/^"|"$/g, ''); });
+    return obj;
+  });
 }
 
-document.getElementById("modal-upload").addEventListener("click", e => {
-  if (e.target === e.currentTarget) closeUploadModal();
-});
+function inferSource(filename) {
+  const base = filename.toLowerCase();
+  const map = { tnt: 'TNT Copiers', wulff: 'Wulff Enterprises', mars: 'Mars', rsi: 'RSI Copiers', copex: 'Copex', impact: 'Impact Networking', intercom: 'Intercom Group' };
+  for (const [key, name] of Object.entries(map)) {
+    if (base.includes(key)) return name;
+  }
+  return filename.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+async function triggerRefresh() {
+  const btn = document.getElementById('btn-refresh');
+  btn.disabled = true;
+  btn.textContent = '↻ Refreshing…';
+  try {
+    const r = await fetch('/api/trigger', { method: 'POST' });
+    if (r.ok) {
+      btn.textContent = '✓ Refresh triggered!';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '↻ Refresh'; }, 5000);
+    } else {
+      const err = await r.json();
+      alert('Refresh failed: ' + (err.error || r.status));
+      btn.disabled = false; btn.textContent = '↻ Refresh';
+    }
+  } catch(e) {
+    alert('Refresh failed: ' + e.message);
+    btn.disabled = false; btn.textContent = '↻ Refresh';
+  }
+}
 </script>
 </body>
 </html>

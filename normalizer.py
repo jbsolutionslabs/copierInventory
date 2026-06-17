@@ -44,27 +44,94 @@ def resolve_brand(raw: str) -> str:
 # Column name synonyms → our standard OUTPUT_COLUMNS names
 # ---------------------------------------------------------------------------
 _COL_SYNONYMS: dict[str, str] = {
-    # source-specific ALS columns
+    # brand
+    "brand":        "brand",
     "make":         "brand",
+    "manufacturer": "brand",
+    "mfr":          "brand",
+    "mfg":          "brand",
+    "oem":          "brand",
 
-    # B&W / total meter (maps to the standard "meter" column)
-    "meter":              "meter",
-    "total_meter":        "meter",
-    "total meter":        "meter",
-    "bw_meter":           "meter",
-    "bw meter":           "meter",
-    "b&w":                "meter",
-    "b&w meter":          "meter",
-    "b&w copies":         "meter",
-    "bw copies":          "meter",
-    "black & white":      "meter",
-    "black and white":    "meter",
-    "black & white meter":"meter",
-    "black and white meter":"meter",
-    "total b&w":          "meter",
-    "total bw":           "meter",
+    # model
+    "model":        "model",
+    "model #":      "model",
+    "model#":       "model",
+    "model number": "model",
+    "item":         "model",
+    "product":      "model",
+    "product name": "model",
+    "name":         "model",
+    "machine":      "model",
+    "unit":         "model",
+    "equipment":    "model",
 
-    # Color meter (intermediate; summed with b&w in normalize())
+    # condition
+    "condition":    "condition",
+    "cond":         "condition",
+    "grade":        "condition",
+    "quality":      "condition",
+    "status":       "condition",
+    "passcopy":     "condition",
+
+    # state / location
+    "state":        "state",
+    "location":     "state",
+    "loc":          "state",
+    "region":       "state",
+    "warehouse":    "state",
+    "city":         "state",
+    "site":         "state",
+
+    # inventory number
+    "inv":          "inv",
+    "inv #":        "inv",
+    "inv#":         "inv",
+    "inventory":    "inv",
+    "inventory #":  "inv",
+    "inventory#":   "inv",
+    "item #":       "inv",
+    "item no":      "inv",
+    "part #":       "inv",
+    "sku":          "inv",
+    "tag":          "inv",
+    "stock #":      "inv",
+    "stock#":       "inv",
+    "ref":          "inv",
+    "reference":    "inv",
+
+    # serial number
+    "serial":        "serial",
+    "serial_#":      "serial",
+    "serial #":      "serial",
+    "serial#":       "serial",
+    "serial number": "serial",
+    "serialnumber":  "serial",
+    "sn":            "serial",
+    "s/n":           "serial",
+
+    # total meter (when source provides combined total)
+    "total_meter":        "total_meter",
+    "total meter":        "total_meter",
+    "total":              "total_meter",
+    "total copies":       "total_meter",
+    "total count":        "total_meter",
+
+    # B&W meter (also used as generic "meter" when only one meter provided)
+    "meter":              "bw_meter",
+    "bw_meter":           "bw_meter",
+    "bw meter":           "bw_meter",
+    "b&w":                "bw_meter",
+    "b&w meter":          "bw_meter",
+    "b&w copies":         "bw_meter",
+    "bw copies":          "bw_meter",
+    "black & white":      "bw_meter",
+    "black and white":    "bw_meter",
+    "black & white meter":"bw_meter",
+    "black and white meter":"bw_meter",
+    "total b&w":          "bw_meter",
+    "total bw":           "bw_meter",
+
+    # Color meter
     "color_meter":        "color_meter",
     "color meter":        "color_meter",
     "colour_meter":       "color_meter",
@@ -74,42 +141,54 @@ _COL_SYNONYMS: dict[str, str] = {
     "clr meter":          "color_meter",
     "total color":        "color_meter",
     "total colour":       "color_meter",
-    "color":              "color_meter",
 
-    "accessories":  "description",
-    "passcopy":     "condition",
-    "comment":      "notes",
-    "tag":          "sku",
-    "serial":       "serial",
+    # is_color flag
+    "is_color":     "is_color",
+    "is color":     "is_color",
+    "color type":   "is_color",
+    "colour type":  "is_color",
 
-    # model
-    "model":        "model",
-    "model #":      "model",
-    "model#":       "model",
-    "model number": "model",
-    "item":         "model",
-    "description":  "description",
-    "product":      "model",
-    "product name": "model",
-    "name":         "model",
-    "machine":      "model",
-    "unit":         "model",
-    "equipment":    "model",
+    # feeder
+    "feeder_model": "feeder_model",
+    "feeder model": "feeder_model",
+    "feeder type":  "feeder_model",
+    "feeder":       "feeder_model",
+    "adf":          "feeder_model",
+    "radf":         "feeder_model",
+    "dadf":         "feeder_model",
 
-    # brand
-    "brand":        "brand",
-    "make":         "brand",
-    "manufacturer": "brand",
-    "mfr":          "brand",
-    "mfg":          "brand",
-    "oem":          "brand",
+    # capacity
+    "capacity":       "capacity",
+    "paper capacity": "capacity",
+    "drawers":        "capacity",
+    "trays":          "capacity",
+    "tray config":    "capacity",
+    "paper trays":    "capacity",
 
-    # condition
-    "condition":    "condition",
-    "cond":         "condition",
-    "grade":        "condition",
-    "quality":      "condition",
-    "status":       "condition",
+    # finisher
+    "finisher":       "finisher",
+    "finisher type":  "finisher",
+    "sorter":         "finisher",
+    "stapler":        "finisher",
+
+    # print
+    "print":          "print_speed",
+    "print speed":    "print_speed",
+    "speed":          "print_speed",
+    "ppm":            "print_speed",
+
+    # scan
+    "scan":           "scan",
+    "scanner":        "scan",
+    "scanning":       "scan",
+    "has scan":       "scan",
+    "scan capable":   "scan",
+
+    # fax
+    "fax":            "fax",
+    "has fax":        "fax",
+    "facsimile":      "fax",
+    "fax capable":    "fax",
 
     # qty
     "qty":          "qty",
@@ -130,27 +209,85 @@ _COL_SYNONYMS: dict[str, str] = {
     "asking":       "price",
     "amount":       "price",
 
+    # description / accessories
+    "description":  "description",
+    "accessories":  "description",
+    "equipment_description": "description",
+
     # notes
     "notes":        "notes",
     "note":         "notes",
     "comments":     "notes",
     "comment":      "notes",
     "remarks":      "notes",
-
-    # serial number
-    "serial":        "serial",
-    "serial_#":      "serial",
-    "serial #":      "serial",
-    "serial#":       "serial",
-    "serial number": "serial",
-    "serialnumber":  "serial",
-    "sn":            "serial",
-    "s/n":           "serial",
 }
 
 
 def _normalize_col_name(col: str) -> str:
     return _COL_SYNONYMS.get(col.lower().strip(), col.lower().strip())
+
+
+# ---------------------------------------------------------------------------
+# Description parsing — extract feature flags from free-text descriptions
+# ---------------------------------------------------------------------------
+
+_FEEDER_RE = re.compile(
+    r"\b(RADF|DADF|SADF|ADF|SPDF|RDF|DF-\d+|DP-\d+)\b",
+    re.IGNORECASE,
+)
+_FINISHER_RE = re.compile(
+    r"\b(FINISHER|BOOKLET|STAPLE|STACKER|SR-\d+|FS-\d+|MJ-\d+|MX-F\w*|BP-F\w*|A-F\w*|FN-\d+)\b",
+    re.IGNORECASE,
+)
+_CAPACITY_RE = re.compile(
+    r"(\d+[xX]\d+(?:\+LCT)?|\d+-?DRAWER|\d+-?TRAY|LCT|LCIT)",
+    re.IGNORECASE,
+)
+_COLOR_WORDS = re.compile(r"\bCOLOR\b", re.IGNORECASE)
+_BW_WORDS    = re.compile(r"\bB&W\b|\bBLACK\b|\bMONO\b", re.IGNORECASE)
+_SCAN_WORDS  = re.compile(r"\bSCAN\b", re.IGNORECASE)
+_FAX_WORDS   = re.compile(r"\bFAX\b", re.IGNORECASE)
+_PRINT_WORDS = re.compile(r"\bPRINT\b|\bCOPY\b|\bPRINTER\b", re.IGNORECASE)
+
+
+def _parse_description(desc: str) -> dict:
+    """
+    Scan a free-text description string and extract feature flags/values.
+    Returns a dict with keys: feeder_model, finisher, capacity, is_color, scan, fax, print_speed.
+    Values are only set if detected; caller should only apply to empty fields.
+    """
+    if not desc or not isinstance(desc, str):
+        return {}
+
+    result: dict = {}
+
+    feeder = _FEEDER_RE.search(desc)
+    if feeder:
+        result["feeder_model"] = feeder.group(0).upper()
+
+    fin = _FINISHER_RE.search(desc)
+    if fin:
+        result["finisher"] = fin.group(0).title()
+
+    cap = _CAPACITY_RE.search(desc)
+    if cap:
+        result["capacity"] = cap.group(0)
+
+    if _COLOR_WORDS.search(desc):
+        result["is_color"] = "YES"
+    elif _BW_WORDS.search(desc):
+        result.setdefault("is_color", "NO")
+
+    if _SCAN_WORDS.search(desc):
+        result["scan"] = "YES"
+
+    if _FAX_WORDS.search(desc):
+        result["fax"] = "YES"
+
+    if _PRINT_WORDS.search(desc):
+        result["print_speed"] = "YES"
+
+    return result
 
 
 def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
@@ -165,19 +302,22 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
     rename_map = {col: _normalize_col_name(col) for col in df.columns}
     df = df.rename(columns=rename_map)
 
+    # Preserve per-row source override before dropping _ columns
+    per_row_source = None
+    if "_raw_source" in df.columns:
+        per_row_source = df["_raw_source"].copy()
+
     # Drop internal helper columns
     df = df.drop(columns=[c for c in df.columns if c.startswith("_")], errors="ignore")
 
     # --- Brand resolution ---
     if "brand" not in df.columns:
-        # Try to infer brand from the model column
         if "model" in df.columns:
             df["brand"] = df["model"].apply(_infer_brand_from_model)
         else:
             df["brand"] = ""
     else:
         df["brand"] = df["brand"].fillna("").apply(resolve_brand)
-        # If brand is empty, try extracting from model
         if "model" in df.columns:
             mask = df["brand"] == ""
             df.loc[mask, "brand"] = df.loc[mask, "model"].apply(_infer_brand_from_model)
@@ -186,43 +326,115 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
     if "model" in df.columns:
         df["model"] = df.apply(_clean_model, axis=1)
 
-    # Ensure all output columns exist
+    # --- Meter columns ---
+    # Clean all three meter columns independently, force float dtype
+    for col in ("total_meter", "bw_meter", "color_meter"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col].apply(_clean_meter), errors="coerce")
+        else:
+            df[col] = pd.array([None] * len(df), dtype="Float64")
+
+    # Derive total_meter from bw + color when not provided
+    bw_num  = pd.to_numeric(df["bw_meter"],    errors="coerce").fillna(0)
+    clr_num = pd.to_numeric(df["color_meter"], errors="coerce").fillna(0)
+    tot_num = pd.to_numeric(df["total_meter"], errors="coerce")
+
+    has_total = tot_num.notna() & (tot_num > 0)
+    has_parts = (bw_num + clr_num) > 0
+    mask_derive = (~has_total) & has_parts
+    if mask_derive.any():
+        df.loc[mask_derive, "total_meter"] = (bw_num + clr_num)[mask_derive].values
+
+    # If we only have total, back-fill bw_meter for B&W machines (color=0)
+    tot_num = pd.to_numeric(df["total_meter"], errors="coerce")  # re-read after update
+    has_total = tot_num.notna() & (tot_num > 0)
+    has_bw_only = df["bw_meter"].isna() & (clr_num == 0) & has_total
+    if has_bw_only.any():
+        df.loc[has_bw_only, "bw_meter"] = tot_num[has_bw_only].values
+
+    # --- Ensure all output columns exist ---
     for col in OUTPUT_COLUMNS:
         if col not in df.columns:
             df[col] = ""
 
-    df["source"] = source_name
+    # Use per-row source name if provided (e.g., ARS-CA, ARS-WA), else global
+    if per_row_source is not None:
+        df["source"] = per_row_source.values
+    else:
+        df["source"] = source_name
 
-    # Coerce qty to numeric where possible; default to 1 (each row = one unit)
-    if "qty" in df.columns:
-        df["qty"] = pd.to_numeric(df["qty"].astype(str).str.replace(r"[^\d.]", "", regex=True), errors="coerce")
-        df["qty"] = df["qty"].fillna(1).replace(0, 1)  # 0 means "unknown qty" → treat as 1
+    # --- Qty ---
+    df["qty"] = pd.to_numeric(
+        df["qty"].astype(str).str.replace(r"[^\d.]", "", regex=True), errors="coerce"
+    )
+    df["qty"] = df["qty"].fillna(1).replace(0, 1)
 
-    # Coerce price to numeric where possible
-    if "price" in df.columns:
-        df["price"] = pd.to_numeric(
-            df["price"].astype(str).str.replace(r"[^\d.]", "", regex=True), errors="coerce"
-        )
+    # --- Price ---
+    df["price"] = pd.to_numeric(
+        df["price"].astype(str).str.replace(r"[^\d.]", "", regex=True), errors="coerce"
+    )
 
-    # Sum color + B&W meters into total meter when both columns are present
-    if "color_meter" in df.columns:
-        bw_clean  = df.get("meter", pd.Series("", index=df.index)).apply(_clean_meter).fillna(0)
-        clr_clean = df["color_meter"].apply(_clean_meter).fillna(0)
-        df["meter"] = bw_clean + clr_clean
-        df = df.drop(columns=["color_meter"], errors="ignore")
+    # --- Serial ---
+    df["serial"] = df["serial"].fillna("").astype(str).str.strip().str.upper()
+    df["serial"] = df["serial"].replace({"NAN": "", "NONE": "", "N/A": "", "NA": ""})
 
-    # Clean meter: parse "5K" → 5000, "736 TOTAL" → 736, "75,664" → 75664
-    if "meter" in df.columns:
-        df["meter"] = df["meter"].apply(_clean_meter)
+    # --- is_color normalization ---
+    if "is_color" in df.columns:
+        def _norm_color(v):
+            s = str(v).strip().upper()
+            if s in ("YES", "Y", "TRUE", "1", "COLOR", "COLOUR"):
+                return "YES"
+            if s in ("NO", "N", "FALSE", "0", "BW", "B&W", "MONO", "BLACK"):
+                return "NO"
+            return ""
+        df["is_color"] = df["is_color"].apply(_norm_color)
 
-    # Normalize serial: strip, uppercase, clear placeholder values
-    if "serial" in df.columns:
-        df["serial"] = df["serial"].fillna("").astype(str).str.strip().str.upper()
-        df["serial"] = df["serial"].replace({"NAN": "", "NONE": "", "N/A": "", "NA": ""})
+    # --- scan / fax normalization ---
+    for col in ("scan", "fax"):
+        if col in df.columns:
+            def _norm_yn(v):
+                s = str(v).strip().upper()
+                if s in ("YES", "Y", "TRUE", "1"):
+                    return "YES"
+                if s in ("NO", "N", "FALSE", "0"):
+                    return "NO"
+                return s if s not in ("NAN", "NONE", "") else ""
+            df[col] = df[col].apply(_norm_yn)
 
-    # Fill NaN with empty string for text columns, 0 for numeric
+    # --- Parse description to fill in missing feature flags ---
+    if "description" in df.columns:
+        feature_cols = ["feeder_model", "finisher", "capacity", "is_color", "scan", "fax", "print_speed"]
+        for idx, row in df.iterrows():
+            desc = str(row.get("description", ""))
+            if not desc or desc == "nan":
+                continue
+            parsed = _parse_description(desc)
+            for feat, val in parsed.items():
+                current = str(row.get(feat, "")).strip()
+                if not current or current in ("", "nan", "NaN"):
+                    df.at[idx, feat] = val
+
+    # --- State normalization (uppercase 2-letter state code) ---
+    if "state" in df.columns:
+        df["state"] = df["state"].fillna("").astype(str).str.strip().str.upper()
+        df["state"] = df["state"].replace({"NAN": "", "NONE": "", "N/A": ""})
+        # Keep only 2-letter state codes to avoid full location names polluting the field
+        df["state"] = df["state"].apply(lambda s: s if len(s) <= 2 else "")
+
+    # Text columns — always string, never numeric
+    _TEXT_COLS = {"source", "brand", "model", "condition", "state", "inv", "serial",
+                  "is_color", "feeder_model", "capacity", "finisher", "print_speed",
+                  "scan", "fax", "description", "notes"}
+
+    # --- Fill NaN ---
     for col in OUTPUT_COLUMNS:
-        if df[col].dtype == object:
+        if col not in df.columns:
+            df[col] = ""
+        if col in _TEXT_COLS:
+            df[col] = df[col].fillna("").astype(str)
+            # Replace pandas "nan" / "None" strings with empty
+            df[col] = df[col].replace({"nan": "", "None": "", "NaN": "", "none": ""})
+        elif df[col].dtype == object:
             df[col] = df[col].fillna("")
         else:
             df[col] = df[col].fillna(0)
@@ -232,7 +444,7 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
 
 def _clean_meter(val) -> float | None:
     """
-    Parse meter values into a plain integer (or None if unreadable).
+    Parse meter values into a plain number (or None if unreadable).
     Handles: "5K" → 5000, "24K" → 24000, "736 TOTAL" → 736,
              "75,664" → 75664, "/" or "N/A" → None.
     """
@@ -250,7 +462,6 @@ def _clean_meter(val) -> float | None:
             return None
     # Strip non-numeric suffix (e.g. " TOTAL", " BW")
     s = re.sub(r"[^\d,.].*$", "", s).strip()
-    # Remove commas
     s = s.replace(",", "")
     if not s:
         return None
@@ -265,10 +476,8 @@ def _infer_brand_from_model(model: str) -> str:
     if not model or not isinstance(model, str):
         return ""
     result = resolve_brand(model)
-    # Only return if we actually matched a known brand (not just title-cased the input)
     if result.lower() != model.strip().lower():
         return result
-    # Check if the first word is a known alias
     first_word = model.strip().split()[0].lower() if model.strip() else ""
     return BRAND_ALIASES.get(first_word, "")
 
@@ -279,6 +488,5 @@ def _clean_model(row: pd.Series) -> str:
     brand = str(row.get("brand", "")).strip().lower()
     if not model or not brand:
         return model
-    # Strip brand prefix (case-insensitive)
     pattern = re.compile(r"^" + re.escape(brand) + r"\s*[-:]?\s*", re.IGNORECASE)
     return pattern.sub("", model).strip()

@@ -26,6 +26,11 @@ SOURCES = {
         "type": "csv_download",
         "url": "https://crm.rsillc.net/bc/download.csv",
     },
+    "tnt": {
+        "name": "TNT Copiers",
+        "type": "playwright",
+        "url": "https://copierondemand1234.my.salesforce-sites.com/InventorySystem",
+    },
 }
 
 # Manual-import sources (drop files into imports/ folder)
@@ -139,14 +144,25 @@ BRAND_ALIASES = {
 
 # Standard output columns (all fetchers/importers normalize to these)
 OUTPUT_COLUMNS = [
-    "source",
+    "source",        # vendor/wholesaler name
     "brand",
     "model",
     "condition",
-    "meter",
+    "state",         # physical location state (CA, NJ, WA …)
+    "inv",           # inventory / item number / SKU
+    "serial",
+    "total_meter",   # total meter (bw + color)
+    "color_meter",   # color-only meter
+    "bw_meter",      # B&W-only meter
+    "is_color",      # "YES" / "NO"
+    "feeder_model",  # feeder type or model name (RADF, DADF, ADF …)
+    "capacity",      # paper capacity / tray config
+    "finisher",      # finisher type or name
+    "print_speed",   # print capability / speed ("YES" or "45 ppm")
+    "scan",          # "YES" / "NO"
+    "fax",           # "YES" / "NO"
     "qty",
     "price",
-    "description",
+    "description",   # raw description / accessories text
     "notes",
-    "serial",
 ]

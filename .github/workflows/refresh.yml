@@ -39,8 +39,8 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data/inventory.json
-          # Also commit watchlist match notifications if generated
           git add docs/data/watchlist_matches.json 2>/dev/null || true
+          git add imports/ 2>/dev/null || true
           # Only commit if files actually changed
           git diff --staged --quiet || git commit -m "chore: refresh inventory $(date -u +%Y-%m-%d)"
           git push

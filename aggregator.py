@@ -30,6 +30,18 @@ def _source_name_from_filename(filename: str) -> str:
     return base.replace("_", " ").replace("-", " ").title()
 
 
+def _source_from_sheet(sheet_name: str) -> str:
+    """Resolve a sheet/tab name to a vendor display name.
+    Checks MANUAL_SOURCES keys first for canonical names, then returns
+    the sheet name as-is (it IS the vendor label in multi-tab files).
+    """
+    lower = sheet_name.strip().lower()
+    for key, display_name in MANUAL_SOURCES.items():
+        if key in lower:
+            return display_name
+    return sheet_name.strip()
+
+
 def _file_hash(filepath: str) -> str:
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
@@ -59,13 +71,24 @@ def load_manual_imports() -> list[pd.DataFrame]:
         try:
             if filepath.endswith(".csv"):
                 raw = pd.read_csv(filepath, dtype=str)
+                raw["_raw_source"] = source_name
+                df = normalizer.normalize(raw, source_name)
+                if not df.empty:
+                    frames.append(df)
+                    print(f"  [import] {source_name}: {len(df)} rows from {basename}")
             else:
-                raw = pd.read_excel(filepath, dtype=str)
-            raw["_raw_source"] = source_name
-            df = normalizer.normalize(raw, source_name)
-            if not df.empty:
-                frames.append(df)
-                print(f"  [import] {source_name}: {len(df)} rows from {basename}")
+                # Read all sheets — multi-tab vendor files are common
+                sheets = pd.read_excel(filepath, sheet_name=None, dtype=str)
+                for sheet_name, raw in sheets.items():
+                    if raw.empty:
+                        continue
+                    # Tab name IS the vendor for multi-sheet files
+                    sheet_source = _source_from_sheet(sheet_name)
+                    raw["_raw_source"] = sheet_source
+                    df = normalizer.normalize(raw, sheet_source)
+                    if not df.empty:
+                        frames.append(df)
+                        print(f"  [import] {sheet_source}: {len(df)} rows from {basename} [{sheet_name}]")
         except Exception as exc:
             print(f"  [import] ERROR loading {filepath}: {exc}")
 
@@ -115,23 +138,47 @@ def write_excel(frames: list[pd.DataFrame]) -> str:
 
     master = pd.concat(frames, ignore_index=True)
 
-    # Dedup by serial — same serial across sources = same physical machine
+    # Dedup by serial AND inv — both are unique identifiers for a physical machine.
+    # Priority: serial > inv number > no identifier (keep all).
+    def _score_df(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df["_score"] = (
+            (pd.to_numeric(df.get("price",       pd.Series(dtype=float)), errors="coerce").fillna(0) > 0).astype(int) * 4 +
+            (pd.to_numeric(df.get("total_meter", pd.Series(dtype=float)), errors="coerce").fillna(0) > 0).astype(int) * 2 +
+            (df.get("description", pd.Series(dtype=str)).fillna("").str.len() > 0).astype(int)
+        )
+        return df
+
     if "serial" in master.columns:
-        has_serial     = master["serial"].notna() & (master["serial"].astype(str).str.strip() != "")
-        with_serial    = master[has_serial].copy()
-        without_serial = master[~has_serial].copy()
+        has_serial = master["serial"].notna() & (master["serial"].astype(str).str.strip() != "")
+    else:
+        has_serial = pd.Series(False, index=master.index)
 
-        if not with_serial.empty:
-            with_serial["_score"] = (
-                (pd.to_numeric(with_serial["price"],        errors="coerce").fillna(0) > 0).astype(int) * 4 +
-                (pd.to_numeric(with_serial["total_meter"],  errors="coerce").fillna(0) > 0).astype(int) * 2 +
-                (with_serial["description"].fillna("").str.len() > 0).astype(int)
-            )
-            with_serial = with_serial.sort_values("_score", ascending=False)
-            with_serial = with_serial.drop_duplicates(subset=["serial"], keep="first")
-            with_serial = with_serial.drop(columns=["_score"])
+    if "inv" in master.columns:
+        has_inv = master["inv"].notna() & (master["inv"].astype(str).str.strip() != "")
+    else:
+        has_inv = pd.Series(False, index=master.index)
 
-        master = pd.concat([with_serial, without_serial], ignore_index=True)
+    # Group 1: has serial → dedup by serial
+    grp_serial = master[has_serial].copy()
+    # Group 2: no serial, has inv → dedup by inv
+    grp_inv    = master[~has_serial & has_inv].copy()
+    # Group 3: no serial, no inv → keep all
+    grp_none   = master[~has_serial & ~has_inv].copy()
+
+    if not grp_serial.empty:
+        grp_serial = _score_df(grp_serial)
+        grp_serial = grp_serial.sort_values("_score", ascending=False)
+        grp_serial = grp_serial.drop_duplicates(subset=["serial"], keep="first")
+        grp_serial = grp_serial.drop(columns=["_score"])
+
+    if not grp_inv.empty:
+        grp_inv = _score_df(grp_inv)
+        grp_inv = grp_inv.sort_values("_score", ascending=False)
+        grp_inv = grp_inv.drop_duplicates(subset=["inv"], keep="first")
+        grp_inv = grp_inv.drop(columns=["_score"])
+
+    master = pd.concat([grp_serial, grp_inv, grp_none], ignore_index=True)
 
     master = master.sort_values(["source", "brand", "model"]).reset_index(drop=True)
 
@@ -207,24 +254,23 @@ def _build_config(rec: dict) -> str:
     return " | ".join(parts)
 
 
-def _load_prev_serials() -> tuple[set, str]:
+def _load_prev_ids() -> tuple[set, set, str]:
     """
-    Load the previous inventory.json and return (set of serial numbers, updated timestamp).
+    Load the previous inventory.json and return:
+      (set of serials, set of inv numbers, updated timestamp)
+    Both sets are used for isNew detection.
     """
     json_path = os.path.join(DOCS_DATA_DIR, "inventory.json")
     if not os.path.exists(json_path):
-        return set(), ""
+        return set(), set(), ""
     try:
         with open(json_path, encoding="utf-8") as f:
             prev = json.load(f)
-        serials = {
-            r.get("serial", "")
-            for r in prev.get("records", [])
-            if r.get("serial", "")
-        }
-        return serials, prev.get("updated", "")
+        serials = {r.get("serial", "") for r in prev.get("records", []) if r.get("serial", "")}
+        invs    = {r.get("inv",    "") for r in prev.get("records", []) if r.get("inv",    "")}
+        return serials, invs, prev.get("updated", "")
     except Exception:
-        return set(), ""
+        return set(), set(), ""
 
 
 def _write_json(master: pd.DataFrame):
@@ -233,7 +279,7 @@ def _write_json(master: pd.DataFrame):
     json_path = os.path.join(DOCS_DATA_DIR, "inventory.json")
 
     # Load previous inventory to detect new items
-    prev_serials, prev_updated = _load_prev_serials()
+    prev_serials, prev_invs, prev_updated = _load_prev_ids()
 
     # Clean the DataFrame
     clean = master.where(master.notna(), other=None).copy()
@@ -258,9 +304,18 @@ def _write_json(master: pd.DataFrame):
                 val = int(val) if val == int(val) else val
             rec[js_field] = val
 
-        # Determine isNew
+        # Determine isNew — new if neither serial nor inv was seen before
         serial = rec.get("serial", "")
-        rec["isNew"] = bool(serial and serial not in prev_serials)
+        inv_id = rec.get("inv", "")
+        serial_new = bool(serial and serial not in prev_serials)
+        inv_new    = bool(inv_id and inv_id not in prev_invs)
+        # If we have a serial, use it; if only inv, use that; if neither, treat as new
+        if serial:
+            rec["isNew"] = serial_new
+        elif inv_id:
+            rec["isNew"] = inv_new
+        else:
+            rec["isNew"] = False
 
         # Build config string
         rec["config"] = _build_config(rec)

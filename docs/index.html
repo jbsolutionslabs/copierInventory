@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Imaging Connection — Inventory Search</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 :root{--navy:#1F3864;--navy2:#2E5090;--navy3:#4A6FA5;--gold:#C9A84C;--gold2:#F0D080;
   --bg:#F2F4F8;--wh:#FFFFFF;--bdr:#D0D8E8;--text:#1A2540;--muted:#6B7A99;
@@ -335,13 +336,20 @@ tbody tr:nth-child(even){background:#F8FAFD}
 <div class="modal-bg" id="upload-modal">
   <div class="modal">
     <h2>↑ Upload Manual Inventory File</h2>
+
+    <!-- Existing files in imports/ -->
+    <div id="existing-files-section" style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">Files in imports/</div>
+      <div id="existing-files-list" style="max-height:130px;overflow-y:auto;font-size:11px"></div>
+    </div>
+
     <div id="drop-zone" onclick="document.getElementById('file-input').click()"
          ondragover="event.preventDefault();this.classList.add('drag-over')"
          ondragleave="this.classList.remove('drag-over')"
          ondrop="handleDrop(event)">
       <div style="font-size:28px">📂</div>
       <p>Click or drag &amp; drop CSV / Excel files here</p>
-      <p style="font-size:10px;margin-top:4px">Supported: .csv, .xlsx, .xls &nbsp;|&nbsp; Include source key in filename (tnt, wulff, mars, rsi, copex…)</p>
+      <p style="font-size:10px;margin-top:4px">Supported: .csv, .xlsx, .xls &nbsp;|&nbsp; Tab name = vendor for multi-sheet files &nbsp;|&nbsp; Include source key in filename (tnt, wulff, mars, rsi, copex…)</p>
       <input type="file" id="file-input" multiple accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFiles(this.files)">
     </div>
     <div id="upload-list"></div>
@@ -977,12 +985,61 @@ function renderWatchlistPillOnly() {
    ════════════════════════════════════════════════════════════════ */
 let uploadFiles_ = [];
 
-function openUploadModal() {
+async function openUploadModal() {
   uploadFiles_ = [];
   document.getElementById('upload-list').innerHTML = '';
   document.getElementById('upload-status').textContent = '';
   document.getElementById('btn-upload').disabled = true;
   document.getElementById('upload-modal').classList.add('open');
+  await loadExistingImports();
+}
+
+async function loadExistingImports() {
+  const el = document.getElementById('existing-files-list');
+  el.innerHTML = '<span style="color:var(--muted)">Loading…</span>';
+  try {
+    const r = await fetch('/api/upload');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const { files } = await r.json();
+    if (!files.length) {
+      el.innerHTML = '<span style="color:var(--muted)">No files uploaded yet.</span>';
+      return;
+    }
+    el.innerHTML = files.map(f => `
+      <div class="upload-item">
+        <span>${f.name} <span style="color:var(--muted)">(${(f.size/1024).toFixed(1)} KB)</span></span>
+        <button class="remove" onclick="deleteImport('${f.name}', this)">✕ Delete</button>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--muted)">Could not load file list: ${e.message}</span>`;
+  }
+}
+
+async function deleteImport(filename, btn) {
+  if (!confirm(`Delete "${filename}" from imports/?`)) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch('/api/upload', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${r.status}`);
+    }
+    // Remove the row from the list
+    btn.closest('.upload-item').remove();
+    const el = document.getElementById('existing-files-list');
+    if (!el.querySelector('.upload-item')) {
+      el.innerHTML = '<span style="color:var(--muted)">No files uploaded yet.</span>';
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '✕ Delete';
+    alert(`Delete failed: ${e.message}`);
+  }
 }
 
 function closeModal() {
@@ -1021,36 +1078,62 @@ function removeUpload(i) {
 async function uploadFiles() {
   if (!uploadFiles_.length) return;
   const statusEl = document.getElementById('upload-status');
-  statusEl.textContent = 'Uploading…';
   let successCount = 0;
+
   for (const file of uploadFiles_) {
     try {
-      const ext = file.name.split('.').pop().toLowerCase();
-      let records;
-      if (ext === 'csv') {
-        const text = await file.text();
-        records = parseCSV(text);
-      } else {
-        statusEl.textContent = `Skipped ${file.name} — use CSV format for uploads (convert Excel to CSV first)`;
-        continue;
-      }
-      const sourceName = inferSource(file.name);
-      const r = await fetch('/api/manual', {
+      statusEl.textContent = `Uploading ${file.name} (${(file.size/1024).toFixed(0)} KB)…`;
+
+      // Convert file to base64 and POST raw bytes directly to imports/ in GitHub.
+      // This avoids JSON size limits and works for any file size or sheet count.
+      const ab = await file.arrayBuffer();
+      const b64 = arrayBufferToBase64(ab);
+
+      const r = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: sourceName, filename: file.name, records }),
+        body: JSON.stringify({ filename: file.name, content: b64 }),
       });
-      if (!r.ok) throw new Error((await r.json()).error || r.status);
+
+      if (!r.ok) {
+        let msg = `HTTP ${r.status}`;
+        try { msg = (await r.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+
       successCount++;
-      statusEl.textContent = `Uploaded ${file.name} (${records.length} rows) as "${sourceName}"`;
+      statusEl.textContent = `✓ ${file.name} uploaded to imports/`;
     } catch(e) {
       statusEl.textContent = `Error uploading ${file.name}: ${e.message}`;
     }
   }
+
   if (successCount) {
-    statusEl.textContent = `${successCount} file(s) uploaded. Triggering refresh…`;
+    statusEl.textContent = `${successCount} file(s) uploaded to imports/. Triggering refresh…`;
     await triggerRefresh();
   }
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/* Parse a file into an array of { sheetName, records[] }.
+   CSV always returns one sheet. XLSX returns one entry per sheet. */
+async function parseFileAllSheets(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv') {
+    const text = await file.text();
+    const records = parseCSV(text);
+    return [{ sheetName: inferSource(file.name), records }];
+  }
+  if (ext === 'xlsx' || ext === 'xls') {
+    return parseXLSXAllSheets(await file.arrayBuffer());
+  }
+  throw new Error(`Unsupported file type: .${ext}`);
 }
 
 function parseCSV(text) {
@@ -1058,11 +1141,52 @@ function parseCSV(text) {
   if (!lines.length) return [];
   const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
   return lines.slice(1).map(line => {
-    const cols = line.split(',');
+    const cols = [];
+    let cur = '', inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur);
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = (cols[i] || '').trim().replace(/^"|"$/g, ''); });
+    headers.forEach((h, i) => { obj[h] = (cols[i] || '').trim(); });
     return obj;
-  });
+  }).filter(r => Object.values(r).some(v => v));
+}
+
+function parseXLSXAllSheets(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const results = [];
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    const records = rows.map(r => {
+      const obj = {};
+      for (const [k, v] of Object.entries(r)) {
+        obj[String(k).trim()] = String(v ?? '').trim();
+      }
+      return obj;
+    }).filter(r => Object.values(r).some(v => v));
+    if (records.length) results.push({ sheetName, records });
+  }
+  return results;
+}
+
+/* Map a sheet name to a display source name using the same logic as filename inference */
+function normalizeSheetSource(sheetName) {
+  const s = sheetName.trim();
+  const map = {
+    tnt: 'TNT Copiers', wulff: 'Wulff Enterprises', mars: 'Mars',
+    rsi: 'RSI Copiers', copex: 'Copex', impact: 'Impact Networking',
+    intercom: 'Intercom Group', rci: 'RCI Wholesale', als: 'ALS Copiers',
+    ars: 'ARS (Equipment Recovery)',
+  };
+  const lower = s.toLowerCase();
+  for (const [key, name] of Object.entries(map)) {
+    if (lower.includes(key)) return name;
+  }
+  return s; // use sheet name as-is if no match
 }
 
 function inferSource(filename) {

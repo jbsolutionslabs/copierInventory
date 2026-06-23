@@ -425,11 +425,14 @@ function updateHeader() {
   document.getElementById('meta-line').textContent =
     (dateStr ? 'As of ' + dateStr + ' \u00a0|\u00a0 ' : '') + src + ' Vendor' + (src!==1?'s':'') + ' \u00a0|\u00a0 Click any column header to sort';
   document.getElementById('hdr-total').textContent = (PAYLOAD.total || 0).toLocaleString();
-  if (PAYLOAD.newCount > 0 && PAYLOAD.newSince) {
-    const since = new Date(PAYLOAD.newSince);
-    const sinceStr = isNaN(since) ? '' : since.toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric'});
+  if (PAYLOAD.newCount > 0) {
     const badge = document.getElementById('hdr-new-badge');
-    badge.textContent = '\u271a ' + PAYLOAD.newCount.toLocaleString() + ' NEW' + (sinceStr ? ' since ' + sinceStr : '');
+    let sinceStr = '';
+    if (PAYLOAD.newSince) {
+      const since = new Date(PAYLOAD.newSince);
+      if (!isNaN(since)) sinceStr = ' since ' + since.toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric'});
+    }
+    badge.textContent = '\u271a ' + PAYLOAD.newCount.toLocaleString() + ' NEW' + sinceStr;
     document.getElementById('hdr-new').style.display = 'block';
     document.getElementById('btn-new').style.display = 'inline-block';
   }
@@ -448,6 +451,34 @@ function populateFilters() {
 
   const fst = document.getElementById('fst');
   states.forEach(s => { if(s){const o=document.createElement('option');o.value=o.textContent=s;fst.appendChild(o);} });
+
+  // Finisher — populate from actual data values after the static yes/no options
+  const finishers = [...new Set(ALL.map(r => r.finisher).filter(Boolean))].sort();
+  const ffinEl = document.getElementById('ffin');
+  if (finishers.length) {
+    const sep = document.createElement('option');
+    sep.disabled = true; sep.textContent = '──────────';
+    ffinEl.appendChild(sep);
+    finishers.forEach(f => {
+      const o = document.createElement('option');
+      o.value = f; o.textContent = f;
+      ffinEl.appendChild(o);
+    });
+  }
+
+  // Feeder — populate unique feeder model names from data
+  const feeders = [...new Set(ALL.map(r => r.feederModel).filter(v => v && v.toUpperCase() !== 'NO'))].sort();
+  const ffedEl = document.getElementById('ffed');
+  if (feeders.length) {
+    const sep2 = document.createElement('option');
+    sep2.disabled = true; sep2.textContent = '──────────';
+    ffedEl.appendChild(sep2);
+    feeders.forEach(f => {
+      const o = document.createElement('option');
+      o.value = f; o.textContent = f;
+      ffedEl.appendChild(o);
+    });
+  }
 
   // Watchlist brand/state dropdowns
   const wfb = document.getElementById('wf-brand');
@@ -564,8 +595,10 @@ function doSearch() {
     if (scan   && r.scan !== scan)     return false;
     if (fin === 'yes' && !r.finisher)  return false;
     if (fin === 'no'  && r.finisher)   return false;
+    if (fin && fin !== 'yes' && fin !== 'no' && r.finisher !== fin) return false;
     if (fed === 'yes' && !hasFed(r))   return false;
     if (fed === 'no'  && hasFed(r))    return false;
+    if (fed && fed !== 'yes' && fed !== 'no' && (r.feederModel || '') !== fed) return false;
     if (fnew === 'yes' && !r.isNew)    return false;
     if (fnew === 'no'  && r.isNew)     return false;
     if (mm != null && r.total != null && r.total > mm) return false;
@@ -609,9 +642,12 @@ function render() {
 }
 
 function clearAll() {
-  ['fb','fm','fv','fst','fme','fpr','fco','ffin','ffed','ffax','fscn','fnew'].forEach(id => {
+  ['fb','fm','fv','fst','fme','fpr','fco','ffax','fscn','fnew'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  // Reset select-back to index 0 (the "Any" option) for data-driven dropdowns
+  document.getElementById('ffin').selectedIndex = 0;
+  document.getElementById('ffed').selectedIndex = 0;
   res = []; sortCol = null; sortDir = 1;
   document.querySelectorAll('#tab-search thead th').forEach(t => {
     t.className = t.classList.contains('cfg-h') ? 'cfg-h' : t.classList.contains('new-h') ? 'new-h' : '';

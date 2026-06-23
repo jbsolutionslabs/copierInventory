@@ -21,7 +21,12 @@ ALLOWED_ORIGINS += ["http://localhost", "http://localhost:8000", "http://127.0.0
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    from db import DATABASE_URL
+    db_type = "postgresql" if "postgresql" in DATABASE_URL or "postgres" in DATABASE_URL else "sqlite"
+    print(f"[startup] Database: {db_type}")
+    print(f"[startup] DATABASE_URL set: {'yes' if os.environ.get('DATABASE_URL') else 'NO — falling back to SQLite'}")
     init_db()
+    print("[startup] Tables created/verified.")
     start_scheduler()
     yield
     # Shutdown
@@ -56,4 +61,17 @@ app.include_router(scrape_router)
 
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "Copier Inventory API"}
+    from db import DATABASE_URL
+    db_type = "postgresql" if "postgresql" in DATABASE_URL or "postgres" in DATABASE_URL else "sqlite"
+    return {
+        "status": "ok",
+        "service": "Copier Inventory API",
+        "db": db_type,
+    }
+
+
+@app.post("/api/admin/init-db")
+def manual_init_db():
+    """Manually re-run table creation. Safe to call multiple times (CREATE IF NOT EXISTS)."""
+    init_db()
+    return {"ok": True, "message": "Tables created/verified."}

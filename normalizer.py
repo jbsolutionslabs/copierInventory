@@ -2,7 +2,7 @@
 
 import re
 import pandas as pd
-from config import BRAND_ALIASES, OUTPUT_COLUMNS
+from config import BRAND_ALIASES, OUTPUT_COLUMNS, VENDOR_ALIASES
 
 # Pre-compile a single regex that matches any alias token
 _ALIAS_PATTERN = re.compile(
@@ -17,27 +17,63 @@ def resolve_brand(raw: str) -> str:
 
     Strategy:
     1. Exact (case-insensitive) lookup in BRAND_ALIASES.
-    2. Token match: check if any word in `raw` is an alias.
-    3. Fuzzy substring match as last resort.
-    4. Return cleaned raw string if no match found.
+    2. Strip parenthetical suffixes ("Ricoh (USA)" → "Ricoh") and retry.
+    3. Token match via regex (longest alias wins, handles word boundaries).
+    4. Normalize slashes/hyphens to spaces and retry exact + token match.
+    5. Return title-cased original if nothing matched.
     """
     if not raw or not isinstance(raw, str):
         return ""
 
     clean = raw.strip()
+    lower = clean.lower()
 
     # 1. Exact match
-    lower = clean.lower()
     if lower in BRAND_ALIASES:
         return BRAND_ALIASES[lower]
 
-    # 2. Token / substring match (longest alias wins)
+    # 2. Strip trailing parenthetical (e.g., "Ricoh (USA)", "Canon Inc.")
+    stripped = re.sub(r"\s*\([^)]*\)\s*$", "", clean).strip()
+    stripped = re.sub(r"\s+(inc\.?|corp\.?|ltd\.?|llc\.?|co\.?)$", "", stripped, flags=re.IGNORECASE).strip()
+    lower_stripped = stripped.lower()
+    if lower_stripped != lower and lower_stripped in BRAND_ALIASES:
+        return BRAND_ALIASES[lower_stripped]
+
+    # 3. Token / substring match (longest alias wins)
     match = _ALIAS_PATTERN.search(lower)
     if match:
         return BRAND_ALIASES[match.group(1).lower()]
 
-    # 3. Return original with title-casing if nothing matched
-    return clean.title()
+    # 4. Normalize slashes and hyphens to spaces, retry
+    normalized = re.sub(r"[/\-]", " ", lower_stripped).strip()
+    if normalized in BRAND_ALIASES:
+        return BRAND_ALIASES[normalized]
+    match2 = _ALIAS_PATTERN.search(normalized)
+    if match2:
+        return BRAND_ALIASES[match2.group(1).lower()]
+
+    # 5. Return title-cased original
+    return stripped.title() if stripped else clean.title()
+
+
+# Regex for trailing US state code suffix on vendor names (e.g., "ARS-NJ", "ARS-WA")
+_VENDOR_LOCATION_RE = re.compile(r"-[A-Z]{2}$", re.IGNORECASE)
+
+
+def _normalize_vendor_name(name: str) -> str:
+    """Map raw vendor/source strings to canonical display names via VENDOR_ALIASES."""
+    if not name or not isinstance(name, str):
+        return name
+    s = name.strip()
+    lower = s.lower()
+    # Direct lookup
+    if lower in VENDOR_ALIASES:
+        return VENDOR_ALIASES[lower]
+    # Try stripping trailing state-code suffix: "ARS-NJ" → "ARS"
+    without_loc = _VENDOR_LOCATION_RE.sub("", s).strip()
+    if without_loc.lower() in VENDOR_ALIASES:
+        return VENDOR_ALIASES[without_loc.lower()]
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +370,14 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
         else:
             df[col] = pd.array([None] * len(df), dtype="Float64")
 
+    # Fix swapped color/total meters: if color > total, swap them
+    _clr = pd.to_numeric(df["color_meter"], errors="coerce")
+    _tot = pd.to_numeric(df["total_meter"], errors="coerce")
+    swap_mask = _clr.notna() & _tot.notna() & (_tot > 0) & (_clr > _tot)
+    if swap_mask.any():
+        df.loc[swap_mask, "total_meter"] = _clr[swap_mask].values
+        df.loc[swap_mask, "color_meter"] = _tot[swap_mask].values
+
     # Derive total_meter from bw + color when not provided
     bw_num  = pd.to_numeric(df["bw_meter"],    errors="coerce").fillna(0)
     clr_num = pd.to_numeric(df["color_meter"], errors="coerce").fillna(0)
@@ -352,6 +396,14 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
     if has_bw_only.any():
         df.loc[has_bw_only, "bw_meter"] = tot_num[has_bw_only].values
 
+    # Calculate bw = total - color when bw is missing but both total and color are present
+    tot_num2 = pd.to_numeric(df["total_meter"], errors="coerce")
+    clr_num2 = pd.to_numeric(df["color_meter"], errors="coerce")
+    bw_missing = pd.to_numeric(df["bw_meter"], errors="coerce").isna()
+    calc_bw_mask = bw_missing & tot_num2.notna() & (tot_num2 > 0) & clr_num2.notna() & (clr_num2 > 0)
+    if calc_bw_mask.any():
+        df.loc[calc_bw_mask, "bw_meter"] = (tot_num2 - clr_num2).clip(lower=0)[calc_bw_mask].values
+
     # --- Ensure all output columns exist ---
     for col in OUTPUT_COLUMNS:
         if col not in df.columns:
@@ -362,6 +414,9 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
         df["source"] = per_row_source.values
     else:
         df["source"] = source_name
+
+    # Normalize vendor names to canonical display names
+    df["source"] = df["source"].apply(_normalize_vendor_name)
 
     # --- Qty ---
     df["qty"] = pd.to_numeric(

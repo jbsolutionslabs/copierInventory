@@ -100,6 +100,7 @@ class UploadedFile(Base):
     id            = Column(Integer, primary_key=True)
     filename      = Column(String(500))
     original_name = Column(String(500))
+    source_key    = Column(String(50), index=True)   # e.g. "tnt", "wulff" — None for unknown
     size_bytes    = Column(Integer)
     storage_path  = Column(String(1000))
     uploaded_at   = Column(DateTime, default=datetime.utcnow)

@@ -12,7 +12,7 @@ SOURCES = {
         "url": "https://alscopiers.com/inventory/",
     },
     "ars": {
-        "name": "ARS (Equipment Recovery)",
+        "name": "ARS",
         "type": "scrape",
         "url": "https://www.equipmentrecovery.com/collections/all",
     },
@@ -43,20 +43,84 @@ MANUAL_SOURCES = {
 }
 
 # ---------------------------------------------------------------------------
+# Vendor (source) alias map
+# Keys are lowercase; values are the canonical display name shown in the UI.
+# Also handles location-suffixed variants (ARS-NJ, ARS-WA, etc.) via the
+# normalizer's _normalize_vendor_name() function which strips trailing state codes.
+# ---------------------------------------------------------------------------
+VENDOR_ALIASES = {
+    # ARS — all variants that may appear from old exports or manual imports
+    "ars":                        "ARS",
+    "ars-ca":                     "ARS",
+    "ars-nj":                     "ARS",
+    "ars-wa":                     "ARS",
+    "ars-sd":                     "ARS",
+    "ars-tx":                     "ARS",
+    "ars-fl":                     "ARS",
+    "ars-ny":                     "ARS",
+    "ars (equipment recovery)":   "ARS",
+    "equipment recovery":         "ARS",
+    "equipment recovery specialists": "ARS",
+
+    # RCI
+    "rci":                        "RCI Wholesale",
+    "rci wholesale":              "RCI Wholesale",
+    "rciwholesale":               "RCI Wholesale",
+
+    # ALS
+    "als":                        "ALS Copiers",
+    "als copiers":                "ALS Copiers",
+    "alscopiers":                 "ALS Copiers",
+
+    # Copex
+    "copex":                      "Copex",
+    "copex inc":                  "Copex",
+    "copex inc.":                 "Copex",
+
+    # RSI
+    "rsi":                        "RSI Copiers",
+    "rsi copiers":                "RSI Copiers",
+
+    # TNT
+    "tnt":                        "TNT Copiers",
+    "tnt copiers":                "TNT Copiers",
+
+    # Wulff
+    "wulff":                      "Wulff",
+    "wulff enterprises":          "Wulff",
+
+    # Mars
+    "mars":                       "Mars",
+
+    # Impact / Intercom
+    "impact":                     "Impact Networking",
+    "impact networking":          "Impact Networking",
+    "intercom":                   "Intercom Group",
+    "intercom group":             "Intercom Group",
+}
+
+# ---------------------------------------------------------------------------
 # Brand alias map
 # Keys are lowercase tokens found in raw data → canonical brand name
 # ---------------------------------------------------------------------------
 BRAND_ALIASES = {
     # Canon
-    "canon": "Canon",
-    "can":   "Canon",
-    "cnon":  "Canon",
-    "cnn":   "Canon",
+    "canon":        "Canon",
+    "can":          "Canon",
+    "cnon":         "Canon",
+    "cnn":          "Canon",
+    "canon inc":    "Canon",
+    "canon inc.":   "Canon",
+    "canon usa":    "Canon",
+    "canon usa inc":"Canon",
 
     # Ricoh
-    "ricoh":  "Ricoh",
-    "ric":    "Ricoh",
-    "rico":   "Ricoh",
+    "ricoh":          "Ricoh",
+    "ric":            "Ricoh",
+    "rico":           "Ricoh",
+    "ricoh corp":     "Ricoh",
+    "ricoh company":  "Ricoh",
+    "ricoh usa":      "Ricoh",
 
     # Ricoh sub-brands
     "savin":     "Savin",
@@ -69,37 +133,51 @@ BRAND_ALIASES = {
     "nas":       "Nashuatec",
 
     # Kyocera
-    "kyocera":      "Kyocera",
-    "kyo":          "Kyocera",
-    "kyocera-mita": "Kyocera",
-    "kyoceramita":  "Kyocera",
-    "km":           "Kyocera",  # context-dependent; overridden below if "konica" present
+    "kyocera":                  "Kyocera",
+    "kyo":                      "Kyocera",
+    "kyocera-mita":             "Kyocera",
+    "kyoceramita":              "Kyocera",
+    "kyocera mita":             "Kyocera",
+    "kyocera document solutions": "Kyocera",
+    "kyocera doc":              "Kyocera",
+    "km":                       "Kyocera",  # context-dependent; overridden if "konica" present
 
     # Konica Minolta
-    "konica":          "Konica Minolta",
-    "koc":             "Konica Minolta",
-    "kon":             "Konica Minolta",
-    "minolta":         "Konica Minolta",
-    "min":             "Konica Minolta",
-    "konica-minolta":  "Konica Minolta",
-    "konicaminolta":   "Konica Minolta",
-    "konica minolta":  "Konica Minolta",
-    "develop":         "Develop",  # KM OEM brand
+    "konica":               "Konica Minolta",
+    "koc":                  "Konica Minolta",
+    "kon":                  "Konica Minolta",
+    "minolta":              "Konica Minolta",
+    "min":                  "Konica Minolta",
+    "konica-minolta":       "Konica Minolta",
+    "konicaminolta":        "Konica Minolta",
+    "konica minolta":       "Konica Minolta",
+    "kon/min":              "Konica Minolta",
+    "konca":                "Konica Minolta",   # common typo
+    "konca minolta":        "Konica Minolta",   # common typo
+    "konica / minolta":     "Konica Minolta",
+    "konica/minolta":       "Konica Minolta",
+    "konica-minolta inc":   "Konica Minolta",
+    "develop":              "Develop",          # KM OEM brand
 
     # Xerox
-    "xerox": "Xerox",
-    "xrx":   "Xerox",
-    "xer":   "Xerox",
+    "xerox":            "Xerox",
+    "xrx":              "Xerox",
+    "xer":              "Xerox",
+    "xerox corp":       "Xerox",
+    "xerox corporation":"Xerox",
 
     # Toshiba
-    "toshiba": "Toshiba",
-    "tos":     "Toshiba",
-    "tosh":    "Toshiba",
+    "toshiba":          "Toshiba",
+    "tos":              "Toshiba",
+    "tosh":             "Toshiba",
+    "toshiba america":  "Toshiba",
+    "toshiba tec":      "Toshiba",
 
     # Sharp
-    "sharp": "Sharp",
-    "sha":   "Sharp",
-    "shp":   "Sharp",
+    "sharp":            "Sharp",
+    "sha":              "Sharp",
+    "shp":              "Sharp",
+    "sharp electronics":"Sharp",
 
     # HP
     "hp":       "HP",

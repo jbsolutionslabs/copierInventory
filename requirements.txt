@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+apscheduler
+python-multipart
+resend
+requests
+beautifulsoup4
+pandas
+openpyxl
+lxml
+playwright
+python-dotenv

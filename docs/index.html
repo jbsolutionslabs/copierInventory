@@ -363,6 +363,12 @@ tbody tr:nth-child(even){background:#F8FAFD}
 
 <script>
 /* ════════════════════════════════════════════════════════════════
+   RAILWAY API BASE URL
+   Set this to your deployed Railway service URL.
+   ════════════════════════════════════════════════════════════════ */
+const API_BASE = 'https://YOUR-APP.up.railway.app';
+
+/* ════════════════════════════════════════════════════════════════
    DATA LOADING
    ════════════════════════════════════════════════════════════════ */
 let ALL = [], PAYLOAD = null;
@@ -371,7 +377,7 @@ let dataLoaded = false;
 
 async function loadData() {
   try {
-    const r = await fetch('data/inventory.json?v=' + Date.now());
+    const r = await fetch(API_BASE + '/api/inventory');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     PAYLOAD = await r.json();
     ALL = PAYLOAD.records || [];
@@ -612,6 +618,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   loadData();
+  // Hydrate watchlist from Railway DB (overwrites localStorage with server truth)
+  fetch(API_BASE + '/api/watchlist')
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (data && Array.isArray(data.watchlist) && data.watchlist.length) {
+        watchlist = data.watchlist;
+        try { localStorage.setItem('ic_watchlist', JSON.stringify(watchlist)); } catch(e) {}
+        renderWatchlistPillOnly();
+      } else {
+        loadWatchlist(); // fallback to localStorage
+      }
+    })
+    .catch(() => loadWatchlist()); // offline fallback
 });
 
 function doSort() {
@@ -679,7 +698,7 @@ function saveWatchlist() {
 
 async function syncWatchlistToServer() {
   try {
-    await fetch('/api/watchlist', {
+    await fetch(API_BASE + '/api/watchlist/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ watchlist }),
@@ -950,7 +969,7 @@ function importWatchlist(event) {
 async function checkWatchlistMatches() {
   try {
     // Use no-store to avoid cached 404, and check ok before parsing
-    const r = await fetch('data/watchlist_matches.json', { cache: 'no-store' });
+    const r = await fetch(API_BASE + '/api/watchlist/matches', { cache: 'no-store' });
     if (!r.ok) return; // file doesn't exist yet — silently skip
     const data = await r.json();
     if (!data.totalNewMatches || !data.requests || !data.requests.length) return;
@@ -998,7 +1017,7 @@ async function loadExistingImports() {
   const el = document.getElementById('existing-files-list');
   el.innerHTML = '<span style="color:var(--muted)">Loading…</span>';
   try {
-    const r = await fetch('/api/upload');
+    const r = await fetch(API_BASE + '/api/uploads');
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const { files } = await r.json();
     if (!files.length) {
@@ -1020,10 +1039,8 @@ async function deleteImport(filename, btn) {
   btn.disabled = true;
   btn.textContent = '…';
   try {
-    const r = await fetch('/api/upload', {
+    const r = await fetch(API_BASE + '/api/uploads/' + encodeURIComponent(filename), {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename }),
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
@@ -1084,15 +1101,12 @@ async function uploadFiles() {
     try {
       statusEl.textContent = `Uploading ${file.name} (${(file.size/1024).toFixed(0)} KB)…`;
 
-      // Convert file to base64 and POST raw bytes directly to imports/ in GitHub.
-      // This avoids JSON size limits and works for any file size or sheet count.
-      const ab = await file.arrayBuffer();
-      const b64 = arrayBufferToBase64(ab);
+      const form = new FormData();
+      form.append('file', file, file.name);
 
-      const r = await fetch('/api/upload', {
+      const r = await fetch(API_BASE + '/api/uploads', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name, content: b64 }),
+        body: form,
       });
 
       if (!r.ok) {
@@ -1203,7 +1217,7 @@ async function triggerRefresh() {
   btn.disabled = true;
   btn.textContent = '↻ Refreshing…';
   try {
-    const r = await fetch('/api/trigger', { method: 'POST' });
+    const r = await fetch(API_BASE + '/api/scrape/trigger', { method: 'POST' });
     if (r.ok) {
       btn.textContent = '✓ Refresh triggered!';
       setTimeout(() => { btn.disabled = false; btn.textContent = '↻ Refresh'; }, 5000);

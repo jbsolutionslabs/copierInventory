@@ -1,6 +1,7 @@
 # db.py — SQLAlchemy models + session factory
 
 import os
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey,

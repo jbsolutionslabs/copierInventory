@@ -1,8 +1,10 @@
 # fetchers/als.py — ALS Copiers
-# Inventory is served via WordPress Ninja Tables AJAX endpoint.
-# We fetch a fresh nonce from the inventory page, then call the data API.
-# limit_rows=0 is Ninja Tables' convention for "return all rows" (no pagination needed).
+# Ninja Tables data is fetched two ways (in order of preference):
+#   1. Playwright: load the inventory page as a real browser, intercept the
+#      Ninja Tables REST or AJAX network response — bypasses IP/bot blocks.
+#   2. requests fallback (REST then AJAX nonce) for local dev without Playwright.
 
+import asyncio
 import re
 import requests
 import pandas as pd
@@ -12,6 +14,7 @@ SOURCE_NAME    = "ALS Copiers"
 INVENTORY_PAGE = "https://alscopiers.com/inventory/"
 AJAX_URL       = "https://alscopiers.com/wp-admin/admin-ajax.php"
 TABLE_ID       = "2992"
+REST_URL       = f"https://alscopiers.com/wp-json/ninja-tables/v1/tables/{TABLE_ID}/public-data"
 
 HEADERS = {
     "User-Agent": (
@@ -25,28 +28,9 @@ HEADERS = {
 _NONCE_RE = re.compile(r'ninja_table_public_nonce["\s:=]+([a-f0-9]+)', re.IGNORECASE)
 
 
-def _get_nonce(session: requests.Session) -> str:
-    """Load the inventory page and extract the public nonce for Ninja Tables."""
-    resp = session.get(INVENTORY_PAGE, timeout=30)
-    resp.raise_for_status()
-
-    match = _NONCE_RE.search(resp.text)
-    if match:
-        return match.group(1)
-
-    # Fallback: parse from JS variable block
-    soup = BeautifulSoup(resp.text, "lxml")
-    for script in soup.find_all("script"):
-        text = script.get_text()
-        m = _NONCE_RE.search(text)
-        if m:
-            return m.group(1)
-
-    raise RuntimeError("[ALS] Could not find ninja_table_public_nonce on inventory page")
-
-
-REST_URL = f"https://alscopiers.com/wp-json/ninja-tables/v1/tables/{TABLE_ID}/public-data"
-
+# ---------------------------------------------------------------------------
+# Shared row parser
+# ---------------------------------------------------------------------------
 
 def _parse_rows(data) -> list:
     """Normalize various Ninja Tables response shapes into a flat list of dicts."""
@@ -60,15 +44,84 @@ def _parse_rows(data) -> list:
     return []
 
 
+# ---------------------------------------------------------------------------
+# Primary: Playwright (real browser — bypasses bot/IP blocks)
+# ---------------------------------------------------------------------------
+
+async def _fetch_via_playwright() -> list:
+    from playwright.async_api import async_playwright
+
+    rows: list = []
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+
+        async def on_response(resp):
+            url = resp.url
+            # Intercept either the REST endpoint or the AJAX endpoint
+            if ("ninja-tables" in url and "public-data" in url) or \
+               ("admin-ajax.php" in url and "ninja_tables" in url):
+                try:
+                    body = await resp.text()
+                    if not body.strip():
+                        return
+                    import json
+                    data = json.loads(body)
+                    parsed = _parse_rows(data)
+                    if parsed:
+                        rows.extend(parsed)
+                        print(f"  [ALS] Captured {len(parsed)} rows via Playwright intercept.")
+                except Exception:
+                    pass
+
+        page.on("response", on_response)
+
+        await page.goto(INVENTORY_PAGE, wait_until="networkidle", timeout=60000)
+        # Give JS a moment to finish any deferred requests
+        await page.wait_for_timeout(3000)
+
+        await browser.close()
+
+    return rows
+
+
+def _fetch_playwright_sync() -> list:
+    try:
+        return asyncio.run(_fetch_via_playwright())
+    except Exception as exc:
+        print(f"  [ALS] Playwright fetch failed: {exc}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Fallback: plain requests (REST then AJAX nonce)
+# ---------------------------------------------------------------------------
+
+def _get_nonce(session: requests.Session) -> str:
+    resp = session.get(INVENTORY_PAGE, timeout=30)
+    resp.raise_for_status()
+
+    match = _NONCE_RE.search(resp.text)
+    if match:
+        return match.group(1)
+
+    soup = BeautifulSoup(resp.text, "lxml")
+    for script in soup.find_all("script"):
+        m = _NONCE_RE.search(script.get_text())
+        if m:
+            return m.group(1)
+
+    raise RuntimeError("[ALS] Could not find ninja_table_public_nonce on inventory page")
+
+
 def _fetch_via_rest(session: requests.Session) -> list:
-    """Try the Ninja Tables REST endpoint — no nonce required."""
     resp = session.get(REST_URL, params={"per_page": 9999, "page": 1}, timeout=120)
     resp.raise_for_status()
     return _parse_rows(resp.json())
 
 
 def _fetch_via_ajax(session: requests.Session) -> list:
-    """Fall back to the legacy AJAX endpoint using a page-scraped nonce."""
     nonce = _get_nonce(session)
     params = {
         "action":          "wp_ajax_ninja_tables_public_action",
@@ -94,26 +147,40 @@ def _fetch_via_ajax(session: requests.Session) -> list:
     return _parse_rows(data)
 
 
-def fetch() -> pd.DataFrame:
-    """
-    Download ALS Copiers inventory. Tries the Ninja Tables REST API first
-    (no nonce needed); falls back to the legacy AJAX nonce approach.
-    """
+def _fetch_requests_fallback() -> list:
     session = requests.Session()
     session.headers.update(HEADERS)
-
-    rows = []
     try:
         rows = _fetch_via_rest(session)
         if rows:
             print(f"  [ALS] {len(rows)} rows via REST API.")
+            return rows
     except Exception as e:
         print(f"  [ALS] REST failed ({e}), trying AJAX fallback…")
-
-    if not rows:
+    try:
         rows = _fetch_via_ajax(session)
         if rows:
             print(f"  [ALS] {len(rows)} rows via AJAX.")
+            return rows
+    except Exception as e:
+        print(f"  [ALS] AJAX fallback failed: {e}")
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+def fetch() -> pd.DataFrame:
+    """
+    Download ALS Copiers inventory.
+    Tries Playwright first (handles bot/IP blocks), falls back to requests.
+    """
+    rows = _fetch_playwright_sync()
+
+    if not rows:
+        print("  [ALS] Playwright returned 0 rows, trying requests fallback…")
+        rows = _fetch_requests_fallback()
 
     if not rows:
         print("  [ALS] Warning: 0 rows returned.")

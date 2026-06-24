@@ -168,7 +168,9 @@ def _load_imports_from_volume(upload_dir: str, source_lookup: dict | None = None
                 for sheet_name, raw in sheets.items():
                     if raw.empty:
                         continue
-                    sheet_source = _source_from_sheet(sheet_name)
+                    # If we have a user-specified source (from DB), use it for every sheet.
+                    # Only fall back to sheet name detection when no DB source is known.
+                    sheet_source = source_name if source_name else _source_from_sheet(sheet_name)
                     raw["_raw_source"] = sheet_source
                     df = normalizer.normalize(raw, sheet_source)
                     if not df.empty:

@@ -5,7 +5,7 @@ import threading
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from db import ScrapeRun, SessionLocal, get_db
+from db import InventoryRecord, ScrapeRun, SessionLocal, get_db
 
 router = APIRouter()
 
@@ -41,6 +41,14 @@ def trigger_scrape(
     )
     t.start()
     return {"ok": True, "message": "Scrape started in background."}
+
+
+@router.delete("/api/inventory/source/{source_name}")
+def delete_by_source(source_name: str, db: Session = Depends(get_db)):
+    """Delete all inventory records for a given source name (for cleanup of stale data)."""
+    deleted = db.query(InventoryRecord).filter(InventoryRecord.source == source_name).delete()
+    db.commit()
+    return {"ok": True, "deleted": deleted, "source": source_name}
 
 
 @router.get("/api/scrape/status")

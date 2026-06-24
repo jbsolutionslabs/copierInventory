@@ -131,7 +131,7 @@ def _file_hash(filepath: str) -> str:
     return h.hexdigest()
 
 
-def _load_imports_from_volume(upload_dir: str) -> list[pd.DataFrame]:
+def _load_imports_from_volume(upload_dir: str, source_lookup: dict | None = None) -> list[pd.DataFrame]:
     frames: list[pd.DataFrame] = []
     if not os.path.isdir(upload_dir):
         return frames
@@ -150,7 +150,11 @@ def _load_imports_from_volume(upload_dir: str) -> list[pd.DataFrame]:
             continue
         seen_hashes[digest] = basename
 
-        source_name = _source_name_from_filename(filepath)
+        # Prefer DB-sourced name (handles custom sources); fall back to filename detection
+        if source_lookup and basename in source_lookup:
+            source_name = source_lookup[basename]
+        else:
+            source_name = _source_name_from_filename(filepath)
         try:
             if filepath.endswith(".csv"):
                 raw = pd.read_csv(filepath, dtype=str)
@@ -429,7 +433,17 @@ def run_scrape(db, sources: list[str] | None = None, imports_only: bool = False)
             for key in keys:
                 frames.extend(_fetch_source(key))
 
-        frames.extend(_load_imports_from_volume(UPLOAD_DIR))
+        # Build filename→display_name lookup from DB so custom sources are resolved correctly
+        from db import UploadedFile as _UF
+        source_lookup = {
+            uf.filename: (
+                MANUAL_SOURCES.get(uf.source_key, uf.source_key.replace("_", " ").title())
+                if uf.source_key else None
+            )
+            for uf in db.query(_UF).all()
+            if uf.filename and uf.source_key
+        }
+        frames.extend(_load_imports_from_volume(UPLOAD_DIR, source_lookup=source_lookup))
 
         if not frames:
             print("[scraper] No data collected.")

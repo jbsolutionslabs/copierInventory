@@ -1143,7 +1143,6 @@ function handleFiles(files) {
 }
 
 const SOURCE_OPTIONS = [
-  { key: '',        label: '— Auto-detect from filename —' },
   { key: 'tnt',    label: 'TNT Copiers' },
   { key: 'wulff',  label: 'Wulff Enterprises' },
   { key: 'mars',   label: 'Mars' },
@@ -1151,21 +1150,58 @@ const SOURCE_OPTIONS = [
   { key: 'intercom', label: 'Intercom Group' },
 ];
 
+function _toSourceKey(name) {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+function _allSourcesSelected() {
+  return uploadFiles_.length > 0 && uploadFiles_.every((_, i) => {
+    const sel = document.getElementById(`src-sel-${i}`);
+    if (!sel) return false;
+    if (sel.value === '__other__') {
+      const inp = document.getElementById(`src-custom-${i}`);
+      return inp && _toSourceKey(inp.value).length > 0;
+    }
+    return sel.value !== '';
+  });
+}
+
+function _onSourceChange(i) {
+  const sel = document.getElementById(`src-sel-${i}`);
+  const customWrap = document.getElementById(`src-custom-wrap-${i}`);
+  if (sel.value === '__other__') {
+    customWrap.style.display = 'block';
+  } else {
+    customWrap.style.display = 'none';
+  }
+  document.getElementById('btn-upload').disabled = !_allSourcesSelected();
+}
+
 function renderUploadList() {
   const el = document.getElementById('upload-list');
-  const optionsHtml = SOURCE_OPTIONS.map(o =>
-    `<option value="${o.key}">${o.label}</option>`
-  ).join('');
+  const optionsHtml = [
+    `<option value="" disabled selected>— Select source —</option>`,
+    ...SOURCE_OPTIONS.map(o => `<option value="${o.key}">${o.label}</option>`),
+    `<option value="__other__">Other (type your own)…</option>`,
+  ].join('');
   el.innerHTML = uploadFiles_.map((f, i) => `
-    <div class="upload-item" style="flex-wrap:wrap;gap:6px;">
-      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+    <div class="upload-item" style="flex-wrap:wrap;gap:6px;align-items:center;">
+      <span style="flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
             title="${f.name}">${f.name} <span style="color:var(--muted)">(${(f.size/1024).toFixed(1)} KB)</span></span>
-      <select id="src-sel-${i}" style="font-size:13px;padding:3px 6px;border-radius:4px;border:1px solid var(--muted);background:var(--card);color:var(--text);">
-        ${optionsHtml}
-      </select>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <select id="src-sel-${i}" onchange="_onSourceChange(${i})"
+                style="font-size:13px;padding:3px 6px;border-radius:4px;border:1px solid var(--muted);background:var(--card);color:var(--text);">
+          ${optionsHtml}
+        </select>
+        <div id="src-custom-wrap-${i}" style="display:none;">
+          <input id="src-custom-${i}" type="text" placeholder="Source name (e.g. BCD Machines)"
+                 oninput="document.getElementById('btn-upload').disabled=!_allSourcesSelected();"
+                 style="font-size:13px;padding:3px 6px;border-radius:4px;border:1px solid var(--gold);background:var(--card);color:var(--text);width:100%;box-sizing:border-box;" />
+        </div>
+      </div>
       <button class="remove" onclick="removeUpload(${i})">✕ Remove</button>
     </div>`).join('');
-  document.getElementById('btn-upload').disabled = !uploadFiles_.length;
+  document.getElementById('btn-upload').disabled = true;
 }
 
 function removeUpload(i) {
@@ -1184,11 +1220,16 @@ async function uploadFiles() {
       statusEl.textContent = `Uploading ${file.name} (${(file.size/1024).toFixed(0)} KB)…`;
 
       const selEl = document.getElementById(`src-sel-${i}`);
-      const sourceKey = selEl ? selEl.value : '';
+      let sourceKey = selEl ? selEl.value : '';
+      if (sourceKey === '__other__') {
+        const customEl = document.getElementById(`src-custom-${i}`);
+        sourceKey = customEl ? _toSourceKey(customEl.value) : '';
+      }
+      if (!sourceKey) throw new Error('No source selected');
 
       const form = new FormData();
       form.append('file', file, file.name);
-      if (sourceKey) form.append('source_key', sourceKey);
+      form.append('source_key', sourceKey);
 
       const r = await fetch(API_BASE + '/api/uploads', {
         method: 'POST',

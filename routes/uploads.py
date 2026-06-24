@@ -67,8 +67,8 @@ async def upload_file(
 ):
     original_name = file.filename or "upload"
 
-    # Use user-supplied source_key if valid; otherwise detect from filename
-    if source_key and source_key in MANUAL_SOURCES:
+    # Use user-supplied source_key if provided; otherwise detect from filename
+    if source_key:
         resolved_key = source_key
     else:
         resolved_key = _detect_source_key(original_name)
@@ -117,7 +117,10 @@ async def upload_file(
     db.add(record)
     db.commit()
 
-    display_name = MANUAL_SOURCES.get(resolved_key, resolved_key or "Unknown")
+    display_name = MANUAL_SOURCES.get(
+        resolved_key,
+        resolved_key.replace("_", " ").title() if resolved_key else "Unknown"
+    )
     result = {"ok": True, "filename": safe_name, "size": len(content),
               "sourceKey": resolved_key, "sourceName": display_name}
     if replaced:

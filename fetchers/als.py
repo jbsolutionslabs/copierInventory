@@ -1,10 +1,11 @@
 # fetchers/als.py — ALS Copiers
-# Ninja Tables data is fetched two ways (in order of preference):
-#   1. Playwright: load the inventory page as a real browser, intercept the
-#      Ninja Tables REST or AJAX network response — bypasses IP/bot blocks.
-#   2. requests fallback (REST then AJAX nonce) for local dev without Playwright.
+# Strategy (in order):
+#  1. Playwright: intercept ANY JSON response that looks like table data
+#  2. Playwright: extract nonce from fully-rendered page, call AJAX with browser cookies
+#  3. requests fallback: REST → AJAX nonce (works locally without IP block)
 
 import asyncio
+import json
 import re
 import requests
 import pandas as pd
@@ -25,7 +26,7 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-_NONCE_RE = re.compile(r'ninja_table_public_nonce["\s:=]+([a-f0-9]+)', re.IGNORECASE)
+_NONCE_RE = re.compile(r'ninja_table_public_nonce["\s:=\']+([a-f0-9]+)', re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +34,6 @@ _NONCE_RE = re.compile(r'ninja_table_public_nonce["\s:=]+([a-f0-9]+)', re.IGNORE
 # ---------------------------------------------------------------------------
 
 def _parse_rows(data) -> list:
-    """Normalize various Ninja Tables response shapes into a flat list of dicts."""
     if isinstance(data, list):
         return [item["value"] if isinstance(item, dict) and "value" in item else item
                 for item in data]
@@ -45,7 +45,7 @@ def _parse_rows(data) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Primary: Playwright (real browser — bypasses bot/IP blocks)
+# Primary: Playwright
 # ---------------------------------------------------------------------------
 
 async def _fetch_via_playwright() -> list:
@@ -55,32 +55,83 @@ async def _fetch_via_playwright() -> list:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(
+            user_agent=HEADERS["User-Agent"],
+            viewport={"width": 1280, "height": 800},
+        )
+        page = await context.new_page()
 
+        # --- Strategy 1: intercept any JSON response that looks like table data ---
         async def on_response(resp):
-            url = resp.url
-            # Intercept either the REST endpoint or the AJAX endpoint
-            if ("ninja-tables" in url and "public-data" in url) or \
-               ("admin-ajax.php" in url and "ninja_tables" in url):
-                try:
-                    body = await resp.text()
-                    if not body.strip():
-                        return
-                    import json
-                    data = json.loads(body)
-                    parsed = _parse_rows(data)
-                    if parsed:
-                        rows.extend(parsed)
-                        print(f"  [ALS] Captured {len(parsed)} rows via Playwright intercept.")
-                except Exception:
-                    pass
+            if rows:  # already got data
+                return
+            ct = resp.headers.get("content-type", "")
+            if "json" not in ct:
+                return
+            try:
+                body = await resp.text()
+                if not body.strip():
+                    return
+                data = json.loads(body)
+                parsed = _parse_rows(data)
+                if len(parsed) >= 5:
+                    rows.extend(parsed)
+                    print(f"  [ALS] Captured {len(parsed)} rows from {resp.url[:80]}")
+            except Exception:
+                pass
 
         page.on("response", on_response)
 
-        await page.goto(INVENTORY_PAGE, wait_until="networkidle", timeout=60000)
-        # Give JS a moment to finish any deferred requests
-        await page.wait_for_timeout(3000)
+        try:
+            await page.goto(INVENTORY_PAGE, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            print(f"  [ALS] Page load warning: {e}")
 
+        # Wait for Ninja Tables JS to fire its data request
+        await page.wait_for_timeout(6000)
+
+        # --- Strategy 2: extract nonce from rendered HTML, call AJAX with browser cookies ---
+        if not rows:
+            print("  [ALS] No JSON intercepted, trying nonce from rendered page…")
+            try:
+                content = await page.content()
+                match = _NONCE_RE.search(content)
+                if match:
+                    nonce = match.group(1)
+                    print(f"  [ALS] Found nonce: {nonce[:8]}…")
+
+                    # Reuse browser cookies for the AJAX call
+                    cookies = await context.cookies()
+                    cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+
+                    session = requests.Session()
+                    session.headers.update({
+                        **HEADERS,
+                        "Cookie": cookie_str,
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Referer": INVENTORY_PAGE,
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                    })
+                    params = {
+                        "action":          "wp_ajax_ninja_tables_public_action",
+                        "table_id":        TABLE_ID,
+                        "target_action":   "get-all-data",
+                        "default_sorting": "manual_sort",
+                        "skip_rows":       "0",
+                        "limit_rows":      "0",
+                        "ninja_table_public_nonce": nonce,
+                    }
+                    r = session.get(AJAX_URL, params=params, timeout=60)
+                    parsed = _parse_rows(r.json())
+                    if parsed:
+                        rows.extend(parsed)
+                        print(f"  [ALS] {len(parsed)} rows via nonce+cookies.")
+                else:
+                    print("  [ALS] No nonce found in rendered page.")
+            except Exception as e:
+                print(f"  [ALS] Nonce strategy failed: {e}")
+
+        await context.close()
         await browser.close()
 
     return rows
@@ -90,7 +141,7 @@ def _fetch_playwright_sync() -> list:
     try:
         return asyncio.run(_fetch_via_playwright())
     except Exception as exc:
-        print(f"  [ALS] Playwright fetch failed: {exc}")
+        print(f"  [ALS] Playwright error: {exc}")
         return []
 
 
@@ -101,69 +152,55 @@ def _fetch_playwright_sync() -> list:
 def _get_nonce(session: requests.Session) -> str:
     resp = session.get(INVENTORY_PAGE, timeout=30)
     resp.raise_for_status()
-
     match = _NONCE_RE.search(resp.text)
     if match:
         return match.group(1)
-
     soup = BeautifulSoup(resp.text, "lxml")
     for script in soup.find_all("script"):
         m = _NONCE_RE.search(script.get_text())
         if m:
             return m.group(1)
-
     raise RuntimeError("[ALS] Could not find ninja_table_public_nonce on inventory page")
-
-
-def _fetch_via_rest(session: requests.Session) -> list:
-    resp = session.get(REST_URL, params={"per_page": 9999, "page": 1}, timeout=120)
-    resp.raise_for_status()
-    return _parse_rows(resp.json())
-
-
-def _fetch_via_ajax(session: requests.Session) -> list:
-    nonce = _get_nonce(session)
-    params = {
-        "action":          "wp_ajax_ninja_tables_public_action",
-        "table_id":        TABLE_ID,
-        "target_action":   "get-all-data",
-        "default_sorting": "manual_sort",
-        "skip_rows":       "0",
-        "limit_rows":      "0",
-        "ninja_table_public_nonce": nonce,
-    }
-    ajax_headers = {
-        **HEADERS,
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": INVENTORY_PAGE,
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-    }
-    resp = session.get(AJAX_URL, params=params, headers=ajax_headers, timeout=120)
-    resp.raise_for_status()
-    try:
-        data = resp.json()
-    except Exception as exc:
-        raise RuntimeError(f"[ALS] JSON parse failed: {exc}\nResponse: {resp.text[:500]}")
-    return _parse_rows(data)
 
 
 def _fetch_requests_fallback() -> list:
     session = requests.Session()
     session.headers.update(HEADERS)
     try:
-        rows = _fetch_via_rest(session)
+        resp = session.get(REST_URL, params={"per_page": 9999, "page": 1}, timeout=120)
+        resp.raise_for_status()
+        rows = _parse_rows(resp.json())
         if rows:
             print(f"  [ALS] {len(rows)} rows via REST API.")
             return rows
     except Exception as e:
         print(f"  [ALS] REST failed ({e}), trying AJAX fallback…")
+
     try:
-        rows = _fetch_via_ajax(session)
+        nonce = _get_nonce(session)
+        params = {
+            "action":          "wp_ajax_ninja_tables_public_action",
+            "table_id":        TABLE_ID,
+            "target_action":   "get-all-data",
+            "default_sorting": "manual_sort",
+            "skip_rows":       "0",
+            "limit_rows":      "0",
+            "ninja_table_public_nonce": nonce,
+        }
+        ajax_headers = {
+            **HEADERS,
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": INVENTORY_PAGE,
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        }
+        resp = session.get(AJAX_URL, params=params, headers=ajax_headers, timeout=120)
+        rows = _parse_rows(resp.json())
         if rows:
             print(f"  [ALS] {len(rows)} rows via AJAX.")
             return rows
     except Exception as e:
         print(f"  [ALS] AJAX fallback failed: {e}")
+
     return []
 
 
@@ -172,10 +209,6 @@ def _fetch_requests_fallback() -> list:
 # ---------------------------------------------------------------------------
 
 def fetch() -> pd.DataFrame:
-    """
-    Download ALS Copiers inventory.
-    Tries Playwright first (handles bot/IP blocks), falls back to requests.
-    """
     rows = _fetch_playwright_sync()
 
     if not rows:

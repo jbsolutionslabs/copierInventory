@@ -177,22 +177,8 @@ def _load_imports_from_volume(upload_dir: str) -> list[pd.DataFrame]:
 
 
 # ---------------------------------------------------------------------------
-# DB upsert
+# DB replace-by-source
 # ---------------------------------------------------------------------------
-
-def _find_existing(db, row: dict) -> InventoryRecord | None:
-    serial = _str_or_none(row.get("serial"))
-    inv    = _str_or_none(row.get("inv"))
-    if serial:
-        rec = db.query(InventoryRecord).filter(InventoryRecord.serial == serial).first()
-        if rec:
-            return rec
-    if inv:
-        rec = db.query(InventoryRecord).filter(InventoryRecord.inv == inv).first()
-        if rec:
-            return rec
-    return None
-
 
 def _apply_fields(record: InventoryRecord, row: dict, run_id: int, now: datetime):
     record.source       = _str_or_none(row.get("source"))
@@ -218,7 +204,6 @@ def _apply_fields(record: InventoryRecord, row: dict, run_id: int, now: datetime
     record.notes        = _str_or_none(row.get("notes"))
     record.last_seen_at = now
     record.scrape_run_id = run_id
-    # Build config
     cfg_dict = {
         "feeder_model": record.feeder_model or "",
         "capacity":     record.capacity or "",
@@ -230,19 +215,66 @@ def _apply_fields(record: InventoryRecord, row: dict, run_id: int, now: datetime
     record.config = _build_config(cfg_dict)
 
 
-def _upsert_inventory(db, master: pd.DataFrame, run: ScrapeRun) -> int:
+def _replace_by_source(db, master: pd.DataFrame, run: ScrapeRun) -> int:
+    """
+    For each source in master:
+      1. Snapshot existing serial→first_seen_at and inv→first_seen_at BEFORE deleting.
+      2. Delete ALL existing records for that source.
+      3. Re-insert fresh rows, restoring first_seen_at for previously known items.
+
+    isNew = True only for records whose serial/inv was never seen before.
+    This guarantees zero duplicates regardless of serial/inv availability.
+    """
     now = datetime.utcnow()
+
+    # --- Step 1: snapshot all known identifiers across ALL sources ---
+    existing = db.query(
+        InventoryRecord.serial,
+        InventoryRecord.inv,
+        InventoryRecord.first_seen_at,
+    ).all()
+
+    # serial → earliest first_seen_at (in case of pre-existing dupes)
+    serial_seen: dict[str, datetime] = {}
+    inv_seen:    dict[str, datetime] = {}
+    for r in existing:
+        if r.serial:
+            if r.serial not in serial_seen or r.first_seen_at < serial_seen[r.serial]:
+                serial_seen[r.serial] = r.first_seen_at
+        if r.inv:
+            if r.inv not in inv_seen or r.first_seen_at < inv_seen[r.inv]:
+                inv_seen[r.inv] = r.first_seen_at
+
+    # --- Step 2: delete all rows for every source we're about to replace ---
+    sources_in_run = [s for s in master["source"].dropna().unique() if s]
+    for source in sources_in_run:
+        deleted = db.query(InventoryRecord).filter(InventoryRecord.source == source).delete()
+        print(f"  [db] Cleared {deleted} old record(s) for source '{source}'")
+    db.flush()
+
+    # --- Step 3: insert fresh rows ---
     new_count = 0
     for _, pandas_row in master.iterrows():
         row = _row_to_dict(pandas_row)
-        existing = _find_existing(db, row)
-        if existing:
-            _apply_fields(existing, row, run.id, now)
+        serial = _str_or_none(row.get("serial"))
+        inv    = _str_or_none(row.get("inv"))
+
+        # Restore first_seen_at if this item was seen before; else it's genuinely new
+        if serial and serial in serial_seen:
+            first_seen = serial_seen[serial]
+            is_new = False
+        elif inv and inv in inv_seen:
+            first_seen = inv_seen[inv]
+            is_new = False
         else:
-            rec = InventoryRecord(first_seen_at=now, is_new=True)
-            _apply_fields(rec, row, run.id, now)
-            db.add(rec)
+            first_seen = now
+            is_new = True
             new_count += 1
+
+        rec = InventoryRecord(first_seen_at=first_seen, is_new=is_new)
+        _apply_fields(rec, row, run.id, now)
+        db.add(rec)
+
     db.commit()
     return new_count
 
@@ -411,7 +443,7 @@ def run_scrape(db, sources: list[str] | None = None, imports_only: bool = False)
         master = pd.concat(frames, ignore_index=True)
         master = _dedup(master)
 
-        new_count = _upsert_inventory(db, master, run)
+        new_count = _replace_by_source(db, master, run)
 
         run.status = "success"
         run.total_records = len(master)

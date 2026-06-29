@@ -825,7 +825,7 @@ function addOrUpdateRequest() {
 
 function editRequest(id) {
   loadWatchlist();
-  const req = watchlist.find(w => w.id === id);
+  const req = watchlist.find(w => w.id == id);
   if (!req) return;
   writeForm(req);
   editingId = id;
@@ -836,10 +836,10 @@ function editRequest(id) {
 
 function deleteRequest(id) {
   loadWatchlist();
-  const req = watchlist.find(w => w.id === id);
+  const req = watchlist.find(w => w.id == id);
   if (!req) return;
   if (!confirm(`Delete request for "${req.name}"?`)) return;
-  watchlist = watchlist.filter(w => w.id !== id);
+  watchlist = watchlist.filter(w => w.id != id);
   saveWatchlist();
   renderWatchlist();
 }
@@ -953,7 +953,7 @@ function renderWatchlist() {
       : `<p class="tip" style="padding:10px 0">No current inventory matches this request yet. You'll see a 🔔 badge here as soon as a match appears.</p>`;
 
     return `<div class="wl-card">
-      <div class="wl-card-hdr" onclick="toggleCard(${req.id})">
+      <div class="wl-card-hdr" onclick="toggleCard('${req.id}')">
         <div style="flex:1;min-width:0">
           <div class="wl-card-title">${req.name} ${newPill}</div>
           ${sub ? `<div class="wl-card-sub">${sub}</div>` : ''}
@@ -967,8 +967,8 @@ function renderWatchlist() {
           </div>
           <div class="wl-actions">
             ${emailBtn}
-            <button class="wl-edit" onclick="event.stopPropagation();editRequest(${req.id})">✏ Edit</button>
-            <button class="wl-del" onclick="event.stopPropagation();deleteRequest(${req.id})">🗑 Delete</button>
+            <button class="wl-edit" onclick="event.stopPropagation();editRequest('${req.id}')">✏ Edit</button>
+            <button class="wl-del" onclick="event.stopPropagation();deleteRequest('${req.id}')">🗑 Delete</button>
           </div>
         </div>
       </div>

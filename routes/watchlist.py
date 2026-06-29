@@ -20,7 +20,8 @@ class WatchlistBulk(BaseModel):
 
 class WatchlistItemIn(BaseModel):
     id:       str | None = None
-    name:     str | None = None
+    cust:     str | None = None
+    name:     str | None = None   # legacy alias
     email:    str | None = None
     phone:    str | None = None
     brand:    str | None = None
@@ -37,7 +38,7 @@ class WatchlistItemIn(BaseModel):
 def _orm_to_dict(item: WatchlistItem) -> dict:
     return {
         "id":       item.id,
-        "name":     item.name or "",
+        "cust":     item.name or "",
         "email":    item.email or "",
         "phone":    item.phone or "",
         "brand":    item.brand or "",
@@ -63,7 +64,7 @@ def get_watchlist(db: Session = Depends(get_db)):
 def add_watchlist_item(item: WatchlistItemIn, db: Session = Depends(get_db)):
     record = WatchlistItem(
         id         = item.id or str(uuid.uuid4()),
-        name       = item.name,
+        name       = item.cust or item.name,
         email      = item.email,
         phone      = item.phone,
         brand      = item.brand,
@@ -87,9 +88,12 @@ def update_watchlist_item(item_id: str, item: WatchlistItemIn, db: Session = Dep
     record = db.query(WatchlistItem).filter(WatchlistItem.id == item_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Watchlist item not found")
+    if item.cust is not None:
+        record.name = item.cust
+    elif item.name is not None:
+        record.name = item.name
     for field, attr in [
-        ("name", "name"), ("email", "email"), ("phone", "phone"),
-        ("brand", "brand"), ("model", "model"),
+        ("email", "email"), ("phone", "phone"), ("brand", "brand"), ("model", "model"),
         ("color", "color"), ("state", "state"),
         ("finisher", "finisher"), ("fax", "fax"), ("notes", "notes"),
     ]:
@@ -197,7 +201,7 @@ def get_watchlist_matches(db: Session = Depends(get_db)):
         if all_matches:
             match_report.append({
                 "customerId":   wl.id,
-                "customerName": wl.name,
+                "customerName": wl.name or "",
                 "email":        wl.email or "",
                 "phone":        wl.phone or "",
                 "matches":      all_matches[:20],

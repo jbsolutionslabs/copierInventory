@@ -769,7 +769,7 @@ async function syncWatchlistToServer() {
 
 function readForm() {
   return {
-    name:     document.getElementById('wf-name').value.trim(),
+    cust:     document.getElementById('wf-name').value.trim(),
     email:    document.getElementById('wf-email').value.trim(),
     phone:    document.getElementById('wf-phone').value.trim(),
     qty:      document.getElementById('wf-qty').value.trim(),
@@ -786,7 +786,7 @@ function readForm() {
 }
 
 function writeForm(req) {
-  document.getElementById('wf-name').value    = req.name    || '';
+  document.getElementById('wf-name').value    = req.cust    || req.name || '';
   document.getElementById('wf-email').value   = req.email   || '';
   document.getElementById('wf-phone').value   = req.phone   || '';
   document.getElementById('wf-qty').value     = req.qty     || '';
@@ -810,10 +810,10 @@ function resetForm() {
 
 function addOrUpdateRequest() {
   const data = readForm();
-  if (!data.name) { alert('Please enter a customer name.'); return; }
+  if (!data.cust) { alert('Please enter a customer name.'); return; }
   loadWatchlist();
   if (editingId) {
-    const idx = watchlist.findIndex(w => w.id === editingId);
+    const idx = watchlist.findIndex(w => w.id == editingId);
     if (idx > -1) watchlist[idx] = { ...watchlist[idx], ...data };
   } else {
     watchlist.push({ id: Date.now(), createdDate: new Date().toISOString().slice(0,10), ...data });
@@ -829,7 +829,7 @@ function editRequest(id) {
   if (!req) return;
   writeForm(req);
   editingId = id;
-  document.getElementById('wf-edit-note').textContent = `Editing request for ${req.name} — click Save to update`;
+  document.getElementById('wf-edit-note').textContent = `Editing request for ${req.cust || req.name} — click Save to update`;
   document.getElementById('wl-form-title').textContent = '✏️ Edit Customer Request';
   document.querySelector('.wl-form').scrollIntoView({ behavior: 'smooth' });
 }
@@ -838,7 +838,7 @@ function deleteRequest(id) {
   loadWatchlist();
   const req = watchlist.find(w => w.id == id);
   if (!req) return;
-  if (!confirm(`Delete request for "${req.name}"?`)) return;
+  if (!confirm(`Delete request for "${req.cust || req.name}"?`)) return;
   watchlist = watchlist.filter(w => w.id != id);
   saveWatchlist();
   renderWatchlist();
@@ -880,7 +880,7 @@ function criteriaTags(req) {
 
 function emailCustomer(req, matches) {
   const subject = encodeURIComponent(`Equipment Match Found \u2014 ${req.brand || 'Your Request'} ${req.model || ''}`.trim());
-  let body = `Hi ${req.name.split(' ')[0] || ''},\n\nGood news \u2014 we found ${matches.length} unit(s) matching what you're looking for:\n\n`;
+  let body = `Hi ${(req.cust || req.name || '').split(' ')[0] || ''},\n\nGood news \u2014 we found ${matches.length} unit(s) matching what you're looking for:\n\n`;
   matches.slice(0, 10).forEach(m => {
     body += `\u2022 ${m.brand} ${m.model} \u2014 Meter: ${m.total ? m.total.toLocaleString() : 'N/A'}`;
     if (m.price) body += ` \u2014 $${Number(m.price).toLocaleString()}`;
@@ -955,7 +955,7 @@ function renderWatchlist() {
     return `<div class="wl-card">
       <div class="wl-card-hdr" onclick="toggleCard('${req.id}')">
         <div style="flex:1;min-width:0">
-          <div class="wl-card-title">${req.name} ${newPill}</div>
+          <div class="wl-card-title">${req.cust || req.name || ''} ${newPill}</div>
           ${sub ? `<div class="wl-card-sub">${sub}</div>` : ''}
           <div class="wl-criteria">${criteriaTags(req)}</div>
           ${req.notes ? `<div class="wl-notes">📝 ${req.notes}</div>` : ''}

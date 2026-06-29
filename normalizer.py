@@ -115,6 +115,7 @@ _COL_SYNONYMS: dict[str, str] = {
     "loc":          "state",
     "region":       "state",
     "warehouse":    "state",
+    "wh":           "state",
     "city":         "state",
     "site":         "state",
 
@@ -246,9 +247,13 @@ _COL_SYNONYMS: dict[str, str] = {
     "amount":       "price",
 
     # description / accessories
-    "description":  "description",
-    "accessories":  "description",
+    "description":       "description",
+    "accessories":       "description",
     "equipment_description": "description",
+    "item configuration": "description",
+    "item config":        "description",
+    "configuration":      "description",
+    "config":             "description",
 
     # notes
     "notes":        "notes",

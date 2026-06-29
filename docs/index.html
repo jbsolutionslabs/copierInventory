@@ -135,6 +135,12 @@ tbody tr:nth-child(even){background:#F8FAFD}
 .wl-body{padding:0 14px 14px;display:none;border-top:1px solid var(--bdr)}
 .wl-body.open{display:block}
 .wl-body table{margin-top:10px}
+.wl-group{background:#fff;border:1.5px solid var(--bdr);border-radius:8px;margin-bottom:12px;overflow:hidden;box-shadow:var(--sh)}
+.wl-group-hdr{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:#EEF2FA}
+.wl-group-hdr:hover{background:#E3EAF6}
+.wl-req-row{border-top:1px solid var(--bdr)}
+.wl-req-hdr{padding:8px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:#FAFCFF}
+.wl-req-hdr:hover{background:#F0F4FD}
 .wl-notes{font-size:11px;color:var(--muted);font-style:italic;margin-top:6px;padding:8px 10px;background:#FFFBEA;border-radius:6px;border:1px solid #F9E79F}
 .wl-empty-cards{text-align:center;padding:40px;color:var(--muted)}
 .wl-empty-cards .ico{font-size:36px;margin-bottom:8px}
@@ -811,18 +817,37 @@ function resetForm() {
 function addOrUpdateRequest() {
   const data = readForm();
   if (!data.cust) { alert('Please enter a customer name.'); return; }
-  loadWatchlist();
+  // Prepare server payload: convert empty strings to null for numeric fields so Pydantic accepts them
+  const serverData = {
+    ...data,
+    maxMeter: data.maxMeter !== '' ? data.maxMeter : null,
+    maxPrice: data.maxPrice !== '' ? data.maxPrice : null,
+  };
+
   if (editingId) {
     const idx = watchlist.findIndex(w => w.id == editingId);
-    if (idx > -1) {
-      const merged = { ...watchlist[idx], ...data };
-      delete merged.name;   // remove legacy field so cust is authoritative
-      watchlist[idx] = merged;
-    }
+    if (idx === -1) { alert('Item not found — please refresh the page and try again.'); return; }
+    const merged = { ...watchlist[idx], ...data };
+    delete merged.name;   // remove legacy field so cust is authoritative
+    watchlist[idx] = merged;
+    // Targeted PUT — more reliable than bulk replace for edits
+    fetch(API_BASE + '/api/watchlist/' + encodeURIComponent(String(editingId)), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serverData),
+    }).catch(() => {});
   } else {
-    watchlist.push({ id: Date.now(), createdDate: new Date().toISOString().slice(0,10), ...data });
+    const newId = String(Date.now());
+    watchlist.push({ id: newId, createdDate: new Date().toISOString().slice(0,10), ...data });
+    // Targeted POST with explicit ID so server preserves it
+    fetch(API_BASE + '/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: newId, ...serverData }),
+    }).catch(() => {});
   }
-  saveWatchlist();
+
+  try { localStorage.setItem('ic_watchlist', JSON.stringify(watchlist)); } catch(e) {}
   resetForm();
   renderWatchlist();
 }
@@ -869,6 +894,11 @@ function matchRequest(req) {
 function toggleCard(id) {
   const body = document.getElementById('wlbody-' + id);
   body.classList.toggle('open');
+}
+
+function toggleGroup(id) {
+  const el = document.getElementById('wlgroup-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 function criteriaTags(req) {
@@ -942,45 +972,91 @@ function renderWatchlist() {
   pill.style.display = totalNewMatches > 0 ? 'inline-block' : 'none';
   pill.textContent   = totalNewMatches > 0 ? `🔔 ${totalNewMatches}` : '';
 
-  computed.sort((a, b) => (b.newMatches.length - a.newMatches.length) || (b.matches.length - a.matches.length));
+  // Group computed items by customer name (case-insensitive)
+  const groupMap = new Map();
+  computed.forEach(item => {
+    const key = (item.req.cust || item.req.name || '').trim().toLowerCase() || '(unknown)';
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        label: (item.req.cust || item.req.name || '(unknown)').trim(),
+        email: item.req.email || '',
+        phone: item.req.phone || '',
+        items: [],
+      });
+    }
+    const g = groupMap.get(key);
+    if (!g.email && item.req.email) g.email = item.req.email;
+    if (!g.phone && item.req.phone) g.phone = item.req.phone;
+    g.items.push(item);
+  });
 
-  listEl.innerHTML = computed.map(({ req, matches, newMatches }) => {
-    const badgeClass = newMatches.length > 0 ? 'has-new' : (matches.length === 0 ? 'zero' : '');
-    const newPill    = newMatches.length > 0 ? `<span class="wl-new-pill">🔔 ${newMatches.length} NEW</span>` : '';
-    const sub        = [req.email, req.phone].filter(Boolean).join('  \u2022  ');
-    const emailBtn   = req.email
-      ? `<button class="wl-email" onclick="event.stopPropagation();emailCustomer(${JSON.stringify(req).replace(/"/g,'&quot;')},${JSON.stringify(matches).replace(/"/g,'&quot;')})">✉ Email Customer</button>`
+  // Sort groups by (new matches desc, total matches desc); sort requests within each group the same way
+  const groups = [...groupMap.entries()].map(([, g]) => {
+    const totalNew = g.items.reduce((s, i) => s + i.newMatches.length, 0);
+    const total    = g.items.reduce((s, i) => s + i.matches.length, 0);
+    g.items.sort((a, b) => (b.newMatches.length - a.newMatches.length) || (b.matches.length - a.matches.length));
+    return { ...g, totalNew, total };
+  }).sort((a, b) => (b.totalNew - a.totalNew) || (b.total - a.total));
+
+  listEl.innerHTML = groups.map((group, gi) => {
+    const gSub     = [group.email, group.phone].filter(Boolean).join('  \u2022  ');
+    const gBadge   = group.totalNew > 0 ? 'has-new' : (group.total === 0 ? 'zero' : '');
+    const gNewPill = group.totalNew > 0 ? `<span class="wl-new-pill">🔔 ${group.totalNew} NEW</span>` : '';
+    const allMatches = group.items.flatMap(i => i.matches);
+    const emailReq   = { cust: group.label, email: group.email };
+    const emailBtn   = group.email
+      ? `<button class="wl-email" onclick="event.stopPropagation();emailCustomer(${JSON.stringify(emailReq).replace(/"/g,'&quot;')},${JSON.stringify(allMatches.slice(0,10)).replace(/"/g,'&quot;')})">✉ Email</button>`
       : '';
 
-    const tableRows = matches.length
-      ? `<div style="overflow:auto;max-height:380px"><table><thead><tr>
-          <th class="new-h">NEW?</th><th>Vendor</th><th>Brand</th><th>Model</th><th>State</th>
-          <th>Total Meter</th><th>Color?</th><th class="cfg-h">⚙ Config</th><th>Price</th>
-        </tr></thead><tbody>${matches.slice(0,100).map(wlRowHtml).join('')}</tbody></table></div>
-        ${matches.length > 100 ? `<p class="tip" style="margin-top:6px">Showing first 100 of ${matches.length} matches</p>` : ''}`
-      : `<p class="tip" style="padding:10px 0">No current inventory matches this request yet. You'll see a 🔔 badge here as soon as a match appears.</p>`;
+    const reqRows = group.items.map(({ req, matches, newMatches }) => {
+      const badgeClass = newMatches.length > 0 ? 'has-new' : (matches.length === 0 ? 'zero' : '');
+      const newPill    = newMatches.length > 0 ? `<span class="wl-new-pill">🔔 ${newMatches.length} NEW</span>` : '';
+      const tableRows  = matches.length
+        ? `<div style="overflow:auto;max-height:380px"><table><thead><tr>
+            <th class="new-h">NEW?</th><th>Vendor</th><th>Brand</th><th>Model</th><th>State</th>
+            <th>Total Meter</th><th>Color?</th><th class="cfg-h">⚙ Config</th><th>Price</th>
+          </tr></thead><tbody>${matches.slice(0,100).map(wlRowHtml).join('')}</tbody></table></div>
+          ${matches.length > 100 ? `<p class="tip" style="margin-top:6px">Showing first 100 of ${matches.length} matches</p>` : ''}`
+        : `<p class="tip" style="padding:10px 0">No current inventory matches this request yet.</p>`;
 
-    return `<div class="wl-card">
-      <div class="wl-card-hdr" onclick="toggleCard('${req.id}')">
+      return `<div class="wl-req-row">
+        <div class="wl-req-hdr" onclick="toggleCard('${req.id}')">
+          <div style="flex:1;min-width:0">
+            ${newPill}
+            <div class="wl-criteria">${criteriaTags(req)}</div>
+            ${req.notes ? `<div class="wl-notes">📝 ${req.notes}</div>` : ''}
+          </div>
+          <div class="wl-matchcount">
+            <div style="text-align:center">
+              <div class="wl-count-badge ${badgeClass}">${matches.length}</div>
+              <div style="font-size:9px;color:var(--muted);margin-top:2px">MATCHES</div>
+            </div>
+            <div class="wl-actions">
+              <button class="wl-edit" onclick="event.stopPropagation();editRequest('${req.id}')">✏ Edit</button>
+              <button class="wl-del" onclick="event.stopPropagation();deleteRequest('${req.id}')">🗑 Delete</button>
+            </div>
+          </div>
+        </div>
+        <div class="wl-body" id="wlbody-${req.id}">${tableRows}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="wl-group">
+      <div class="wl-group-hdr" onclick="toggleGroup(${gi})">
         <div style="flex:1;min-width:0">
-          <div class="wl-card-title">${req.cust || req.name || ''} ${newPill}</div>
-          ${sub ? `<div class="wl-card-sub">${sub}</div>` : ''}
-          <div class="wl-criteria">${criteriaTags(req)}</div>
-          ${req.notes ? `<div class="wl-notes">📝 ${req.notes}</div>` : ''}
+          <div class="wl-card-title">${group.label} ${gNewPill}</div>
+          ${gSub ? `<div class="wl-card-sub">${gSub}</div>` : ''}
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">${group.items.length} request${group.items.length !== 1 ? 's' : ''}</div>
         </div>
         <div class="wl-matchcount">
           <div style="text-align:center">
-            <div class="wl-count-badge ${badgeClass}">${matches.length}</div>
+            <div class="wl-count-badge ${gBadge}">${group.total}</div>
             <div style="font-size:9px;color:var(--muted);margin-top:2px">MATCHES</div>
           </div>
-          <div class="wl-actions">
-            ${emailBtn}
-            <button class="wl-edit" onclick="event.stopPropagation();editRequest('${req.id}')">✏ Edit</button>
-            <button class="wl-del" onclick="event.stopPropagation();deleteRequest('${req.id}')">🗑 Delete</button>
-          </div>
+          <div class="wl-actions">${emailBtn}</div>
         </div>
       </div>
-      <div class="wl-body" id="wlbody-${req.id}">${tableRows}</div>
+      <div id="wlgroup-${gi}">${reqRows}</div>
     </div>`;
   }).join('');
 }

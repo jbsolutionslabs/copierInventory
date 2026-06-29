@@ -846,9 +846,13 @@ function deleteRequest(id) {
 
 function matchRequest(req) {
   return ALL.filter(r => {
-    if (req.brand && r.brand !== req.brand) return false;
-    if (req.model && !(r.model||'').toLowerCase().includes(req.model.toLowerCase())) return false;
-    if (req.color && r.isColor !== req.color) return false;
+    if (req.brand && r.brand.toLowerCase() !== req.brand.toLowerCase()) return false;
+    if (req.model) {
+      const models = req.model.split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
+      const inv = (r.model || '').toLowerCase();
+      if (!models.some(m => inv.includes(m) || m.includes(inv))) return false;
+    }
+    if (req.color && req.color.toLowerCase() !== 'any' && r.isColor !== req.color) return false;
     if (req.state && r.state !== req.state) return false;
     if (req.finisher === 'yes' && !r.finisher) return false;
     if (req.fax === 'YES' && r.fax !== 'YES') return false;

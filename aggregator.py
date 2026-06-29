@@ -415,9 +415,11 @@ def _find_matches(req: dict, inventory: list[dict]) -> list[dict]:
     for r in inventory:
         if brand and r.get("brand", "").lower() != brand:
             continue
-        if model and model not in r.get("model", "").lower():
-            continue
-        if color and r.get("isColor", "") != color:
+        if model:
+            models = [m.strip() for m in model.split(",") if m.strip()]
+            if not any(m in r.get("model", "").lower() for m in models):
+                continue
+        if color and color.lower() != "any" and r.get("isColor", "") != color:
             continue
         if state and r.get("state", "").upper() != state:
             continue

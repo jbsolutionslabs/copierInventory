@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 class WatchlistBulk(BaseModel):
-    watchlist: list[dict]
+    watchlist: list[dict] = []
 
 
 class WatchlistItemIn(BaseModel):
@@ -114,14 +114,40 @@ def delete_watchlist_item(item_id: str, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.post("/api/watchlist/import")
+def import_watchlist(items: list[dict], db: Session = Depends(get_db)):
+    """Accept a raw JSON array (backup format) and replace the entire watchlist."""
+    db.query(WatchlistItem).delete()
+    for item_dict in items:
+        record = WatchlistItem(
+            id         = str(item_dict.get("id") or uuid.uuid4()),
+            name       = item_dict.get("name") or item_dict.get("cust"),
+            email      = item_dict.get("email"),
+            phone      = item_dict.get("phone"),
+            brand      = item_dict.get("brand"),
+            model      = item_dict.get("model"),
+            max_meter  = item_dict.get("maxMeter"),
+            max_price  = item_dict.get("maxPrice"),
+            color      = item_dict.get("color"),
+            state      = item_dict.get("state"),
+            finisher   = item_dict.get("finisher"),
+            fax        = item_dict.get("fax"),
+            notes      = item_dict.get("notes"),
+            created_at = datetime.utcnow(),
+        )
+        db.add(record)
+    db.commit()
+    return {"ok": True, "count": len(items)}
+
+
 @router.post("/api/watchlist/bulk")
 def bulk_sync_watchlist(payload: WatchlistBulk, db: Session = Depends(get_db)):
     """Replace the entire watchlist with the supplied array (used by frontend sync)."""
     db.query(WatchlistItem).delete()
     for item_dict in payload.watchlist:
         record = WatchlistItem(
-            id         = item_dict.get("id") or str(uuid.uuid4()),
-            name       = item_dict.get("name"),
+            id         = str(item_dict.get("id") or uuid.uuid4()),
+            name       = item_dict.get("name") or item_dict.get("cust"),
             email      = item_dict.get("email"),
             phone      = item_dict.get("phone"),
             brand      = item_dict.get("brand"),
@@ -153,8 +179,6 @@ def get_watchlist_matches(db: Session = Depends(get_db)):
 
     all_records = db.query(InventoryRecord).all()
     inventory_json = [_record_to_dict(r, run_started_at) for r in all_records]
-    new_items = [r for r in inventory_json if r["isNew"]]
-
     watchlist = db.query(WatchlistItem).all()
     match_report = []
 
@@ -169,15 +193,15 @@ def get_watchlist_matches(db: Session = Depends(get_db)):
             "maxMeter": wl.max_meter,
             "maxPrice": wl.max_price,
         }
-        new_matches = _find_matches(req, new_items)
-        if new_matches:
+        all_matches = _find_matches(req, inventory_json)
+        if all_matches:
             match_report.append({
                 "customerId":   wl.id,
                 "customerName": wl.name,
                 "email":        wl.email or "",
                 "phone":        wl.phone or "",
-                "matches":      new_matches[:20],
-                "matchCount":   len(new_matches),
+                "matches":      all_matches[:20],
+                "matchCount":   len(all_matches),
                 "criteria":     {k: req.get(k) for k in ("brand", "model", "maxMeter", "maxPrice", "color", "state", "finisher", "fax")},
             })
 

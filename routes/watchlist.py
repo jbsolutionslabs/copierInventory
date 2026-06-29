@@ -125,7 +125,7 @@ def import_watchlist(items: list[dict], db: Session = Depends(get_db)):
     for item_dict in items:
         record = WatchlistItem(
             id         = str(item_dict.get("id") or uuid.uuid4()),
-            name       = item_dict.get("name") or item_dict.get("cust"),
+            name       = item_dict.get("cust") or item_dict.get("name"),
             email      = item_dict.get("email"),
             phone      = item_dict.get("phone"),
             brand      = item_dict.get("brand"),
@@ -151,7 +151,7 @@ def bulk_sync_watchlist(payload: WatchlistBulk, db: Session = Depends(get_db)):
     for item_dict in payload.watchlist:
         record = WatchlistItem(
             id         = str(item_dict.get("id") or uuid.uuid4()),
-            name       = item_dict.get("name") or item_dict.get("cust"),
+            name       = item_dict.get("cust") or item_dict.get("name"),
             email      = item_dict.get("email"),
             phone      = item_dict.get("phone"),
             brand      = item_dict.get("brand"),

@@ -814,7 +814,11 @@ function addOrUpdateRequest() {
   loadWatchlist();
   if (editingId) {
     const idx = watchlist.findIndex(w => w.id == editingId);
-    if (idx > -1) watchlist[idx] = { ...watchlist[idx], ...data };
+    if (idx > -1) {
+      const merged = { ...watchlist[idx], ...data };
+      delete merged.name;   // remove legacy field so cust is authoritative
+      watchlist[idx] = merged;
+    }
   } else {
     watchlist.push({ id: Date.now(), createdDate: new Date().toISOString().slice(0,10), ...data });
   }
@@ -850,7 +854,7 @@ function matchRequest(req) {
     if (req.model) {
       const models = req.model.split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
       const inv = (r.model || '').toLowerCase();
-      if (!models.some(m => inv.includes(m) || m.includes(inv))) return false;
+      if (!inv || !models.some(m => inv.includes(m))) return false;
     }
     if (req.color && req.color.toLowerCase() !== 'any' && r.isColor !== req.color) return false;
     if (req.state && r.state !== req.state) return false;

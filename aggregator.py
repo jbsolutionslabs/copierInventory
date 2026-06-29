@@ -417,7 +417,8 @@ def _find_matches(req: dict, inventory: list[dict]) -> list[dict]:
             continue
         if model:
             models = [m.strip() for m in model.split(",") if m.strip()]
-            if not any(m in r.get("model", "").lower() for m in models):
+            inv_model = r.get("model", "").lower().strip()
+            if not inv_model or not any(m in inv_model for m in models):
                 continue
         if color and color.lower() != "any" and r.get("isColor", "") != color:
             continue

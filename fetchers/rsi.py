@@ -171,6 +171,22 @@ def fetch() -> pd.DataFrame:
     cols_to_drop = [c for c in df.columns if "COMMENT" in c.upper()]
     df = df.drop(columns=cols_to_drop, errors="ignore")
 
+    # Extract state from CITY column only when it contains a 2-letter US state code;
+    # then drop the city column so it doesn't get mapped to state by the normalizer
+    # (city names like "Cherry Hill" would otherwise map to state and then be discarded,
+    # leaving state empty for all RSI records)
+    _US_STATES = {
+        "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+        "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+        "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+        "VA","WA","WV","WI","WY","DC",
+    }
+    if city_col and city_col in df.columns:
+        df["state"] = df[city_col].apply(
+            lambda v: v.strip().upper() if str(v).strip().upper() in _US_STATES else ""
+        )
+        df = df.drop(columns=[city_col], errors="ignore")
+
     df["qty"] = 1
     df["_raw_source"] = SOURCE_NAME
     return df

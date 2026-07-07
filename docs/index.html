@@ -207,6 +207,8 @@ tbody tr:nth-child(even){background:#F8FAFD}
       <select id="fb"><option value="">All Brands</option></select></div>
     <div class="field fm"><label>Model (contains)</label>
       <input type="text" id="fm" placeholder="e.g. IM C, 4535, C257"></div>
+    <div class="field fm"><label>Serial # (contains)</label>
+      <input type="text" id="fsr" placeholder="e.g. HHP05113"></div>
     <div class="field fv"><label>Vendor</label>
       <select id="fv"><option value="">All Vendors</option></select></div>
     <div class="field fst"><label>State</label>
@@ -579,6 +581,7 @@ function doSearch() {
   if (!dataLoaded) { alert('Inventory still loading…'); return; }
   const brand  = document.getElementById('fb').value.toLowerCase();
   const model  = document.getElementById('fm').value.trim().toLowerCase();
+  const serial = document.getElementById('fsr').value.trim().toLowerCase();
   const vendor = document.getElementById('fv').value.toLowerCase();
   const state  = document.getElementById('fst').value.toLowerCase();
   const meter  = document.getElementById('fme').value;
@@ -597,6 +600,7 @@ function doSearch() {
     if (vendor && (r.vendor||'').toLowerCase() !== vendor) return false;
     if (state  && (r.state||'').toLowerCase()  !== state)  return false;
     if (model  && !(r.model||'').toLowerCase().includes(model)) return false;
+    if (serial && !(r.serial||'').toLowerCase().includes(serial)) return false;
     if (color  && r.isColor !== color) return false;
     if (fax    && r.fax !== fax)       return false;
     if (scan   && r.scan !== scan)     return false;
@@ -649,7 +653,7 @@ function render() {
 }
 
 function clearAll() {
-  ['fb','fm','fv','fst','fme','fpr','fco','ffax','fscn','fnew'].forEach(id => {
+  ['fb','fm','fsr','fv','fst','fme','fpr','fco','ffax','fscn','fnew'].forEach(id => {
     document.getElementById(id).value = '';
   });
   // Reset select-back to index 0 (the "Any" option) for data-driven dropdowns
@@ -716,13 +720,13 @@ function doSort() {
 function exportCSV() {
   const data = res.length ? res : ALL;
   if (!data.length) { alert('No data to export. Run a search first or wait for inventory to load.'); return; }
-  const h = ['New?','Vendor','Brand','Model','State','INV#','Serial#','Total Meter',
-    'Color Meter','BW Meter','Color?','Configuration','Feeder Type','Capacity',
+  const h = ['New?','Vendor','Brand','Model','Configuration','Total Meter',
+    'Color Meter','BW Meter','Serial#','State','INV#','Color?','Feeder Type','Capacity',
     'Finisher','Print','Scan','Fax','Price','Condition','Notes'];
   const rows = data.map(r => [
-    r.isNew ? 'NEW' : '', r.vendor, r.brand, r.model, r.state, r.inv, r.serial,
-    r.total ?? '', r.color ?? '', r.bw ?? '', r.isColor, r.config, r.feederModel,
-    r.capacity, r.finisher, r.print, r.scan, r.fax,
+    r.isNew ? 'NEW' : '', r.vendor, r.brand, r.model, r.config,
+    r.total ?? '', r.color ?? '', r.bw ?? '', r.serial, r.state, r.inv,
+    r.isColor, r.feederModel, r.capacity, r.finisher, r.print, r.scan, r.fax,
     r.price != null ? r.price : '', r.condition || '', (r.notes || '').replace(/,/g, ';')
   ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
   const blob = new Blob([[h.join(','), ...rows].join('\n')], { type: 'text/csv' });

@@ -167,6 +167,9 @@ _COL_SYNONYMS: dict[str, str] = {
     "black and white meter":"bw_meter",
     "total b&w":          "bw_meter",
     "total bw":           "bw_meter",
+    "b/w meter":          "bw_meter",   # Impact uses B/W not B&W
+    "b/w":                "bw_meter",
+    "b/w copies":         "bw_meter",
 
     # Color meter
     "color_meter":        "color_meter",
@@ -193,6 +196,7 @@ _COL_SYNONYMS: dict[str, str] = {
     "adf":          "feeder_model",
     "radf":         "feeder_model",
     "dadf":         "feeder_model",
+    "df":           "feeder_model",   # Impact: DF = Document Feeder column
 
     # capacity
     "capacity":       "capacity",
@@ -201,18 +205,21 @@ _COL_SYNONYMS: dict[str, str] = {
     "trays":          "capacity",
     "tray config":    "capacity",
     "paper trays":    "capacity",
+    "pfu":            "capacity",     # Impact: PFU = Paper Feed Unit
 
     # finisher
     "finisher":       "finisher",
     "finisher type":  "finisher",
     "sorter":         "finisher",
     "stapler":        "finisher",
+    "fin":            "finisher",     # Impact: Fin = Finisher column
 
     # print
     "print":          "print_speed",
     "print speed":    "print_speed",
     "speed":          "print_speed",
     "ppm":            "print_speed",
+    "prt":            "print_speed",  # Impact: Prt = Print protocol column
 
     # scan
     "scan":           "scan",
@@ -449,12 +456,18 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
             return ""
         df["is_color"] = df["is_color"].apply(_norm_color)
 
+    # Normalize feeder_model: "X" (Impact presence indicator) → "ADF"
+    if "feeder_model" in df.columns:
+        df["feeder_model"] = df["feeder_model"].apply(
+            lambda v: "ADF" if str(v).strip().upper() == "X" else v
+        )
+
     # --- scan / fax normalization ---
     for col in ("scan", "fax"):
         if col in df.columns:
             def _norm_yn(v):
                 s = str(v).strip().upper()
-                if s in ("YES", "Y", "TRUE", "1"):
+                if s in ("YES", "Y", "TRUE", "1", "X"):   # "X" = present (Impact style)
                     return "YES"
                 if s in ("NO", "N", "FALSE", "0"):
                     return "NO"

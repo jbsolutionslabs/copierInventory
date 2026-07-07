@@ -28,7 +28,8 @@ def _build_config(rec: dict) -> str:
         parts.append(rec["capacity"])
     if rec.get("finisher"):
         parts.append(rec["finisher"])
-    if str(rec.get("print_speed", "")).upper() in ("YES", "Y"):
+    ps = str(rec.get("print_speed", "")).strip().upper()
+    if ps and ps not in ("NO", "N", "FALSE", "0", "NAN", "NONE"):
         parts.append("Print")
     if str(rec.get("scan", "")).upper() in ("YES", "Y"):
         parts.append("Scan")

@@ -416,6 +416,23 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
     if calc_bw_mask.any():
         df.loc[calc_bw_mask, "bw_meter"] = (tot_num2 - clr_num2).clip(lower=0)[calc_bw_mask].values
 
+    # --- Combine LCT (Large Capacity Tray) into capacity ---
+    # Impact and similar sources may have a separate LCT column alongside PFU/capacity.
+    # Merge it here so both appear in the config string.
+    if "lct" in df.columns:
+        if "capacity" not in df.columns:
+            df["capacity"] = ""
+        def _merge_lct(row):
+            lct = str(row.get("lct", "")).strip()
+            if lct.lower() in ("nan", "none", ""):
+                return str(row.get("capacity", "")).strip()
+            cap = str(row.get("capacity", "")).strip()
+            if cap.lower() in ("nan", "none", ""):
+                cap = ""
+            return f"{cap} + LCT" if cap else "LCT"
+        df["capacity"] = df.apply(_merge_lct, axis=1)
+        df = df.drop(columns=["lct"], errors="ignore")
+
     # --- Ensure all output columns exist ---
     for col in OUTPUT_COLUMNS:
         if col not in df.columns:
@@ -463,15 +480,16 @@ def normalize(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
         )
 
     # --- scan / fax normalization ---
+    # Rule: any populated (non-empty, non-NO) value means the feature is present → "YES"
     for col in ("scan", "fax"):
         if col in df.columns:
             def _norm_yn(v):
                 s = str(v).strip().upper()
-                if s in ("YES", "Y", "TRUE", "1", "X"):   # "X" = present (Impact style)
-                    return "YES"
+                if not s or s in ("NAN", "NONE", "N/A", "NA"):
+                    return ""
                 if s in ("NO", "N", "FALSE", "0"):
                     return "NO"
-                return s if s not in ("NAN", "NONE", "") else ""
+                return "YES"   # "X", "YES", "Y", scan model name, etc. all mean present
             df[col] = df[col].apply(_norm_yn)
 
     # --- Parse description to fill in missing feature flags ---

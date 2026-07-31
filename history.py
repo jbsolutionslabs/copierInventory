@@ -287,8 +287,8 @@ def _write_observation(
             is_first       = is_first,
         )
         db.add(obs)
+        db.flush()   # INSERT inside savepoint; obs.id populated before sp.commit()
         sp.commit()
-        db.flush()
         return obs
     except IntegrityError:
         sp.rollback()
@@ -317,8 +317,8 @@ def _emit_event(db: Session, **kwargs) -> Optional[MachineEvent]:
         sp = db.begin_nested()
         event = MachineEvent(**kwargs)
         db.add(event)
+        db.flush()   # INSERT inside savepoint; event.id populated before sp.commit()
         sp.commit()
-        db.flush()
         return event
     except IntegrityError:
         sp.rollback()

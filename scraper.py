@@ -270,8 +270,8 @@ def _link_machine_and_listing(
                 inventory_record_id = rec.id,
             )
             db.add(listing)
+            db.flush()   # INSERT inside savepoint; listing.id populated before sp.commit()
             sp.commit()
-            db.flush()
 
         rec.listing_id = listing.id
 
@@ -351,6 +351,12 @@ def _replace_by_source(db, master: pd.DataFrame, run: ScrapeRun) -> int:
     # --- Step 2: delete all rows for every source we're about to replace ---
     sources_in_run = [s for s in master["source"].dropna().unique() if s]
     for source in sources_in_run:
+        # Null out FK refs from listings before deleting inventory records to avoid
+        # FK constraint violations on PostgreSQL (no ON DELETE CASCADE/SET NULL).
+        db.query(Listing).filter(
+            Listing.source == source,
+            Listing.inventory_record_id.isnot(None),
+        ).update({Listing.inventory_record_id: None}, synchronize_session=False)
         deleted = db.query(InventoryRecord).filter(InventoryRecord.source == source).delete()
         print(f"  [db] Cleared {deleted} old record(s) for source '{source}'")
     db.flush()

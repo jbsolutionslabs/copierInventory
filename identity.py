@@ -336,8 +336,8 @@ def _create_machine_with_retry(db: Session, **kwargs) -> tuple[Machine, bool]:
         sp = db.begin_nested()
         machine = Machine(**kwargs)
         db.add(machine)
+        db.flush()   # INSERT inside savepoint; machine.id populated before sp.commit()
         sp.commit()
-        db.refresh(machine)
         return machine, True
     except IntegrityError:
         sp.rollback()
@@ -390,8 +390,8 @@ def _enqueue_review(
             status="pending",
         )
         db.add(review)
+        db.flush()   # INSERT inside savepoint; review.id populated before sp.commit()
         sp.commit()
-        db.refresh(review)
         return review
     except IntegrityError:
         sp.rollback()

@@ -10,8 +10,8 @@ import pandas as pd
 
 import normalizer
 from aggregator import _find_matches, _safe_num
-from config import MANUAL_SOURCES, OUTPUT_COLUMNS, SOURCES
-from db import InventoryRecord, ScrapeRun, WatchlistItem
+from config import MANUAL_SOURCES, OUTPUT_COLUMNS, SOURCES, get_listing_id_field
+from db import InventoryRecord, Listing, Machine, ScrapeRun, WatchlistItem
 
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "imports"))
 
@@ -70,7 +70,9 @@ def _str_or_none(val) -> str | None:
 # Source fetching (mirrors run.py logic)
 # ---------------------------------------------------------------------------
 
-def _fetch_source(key: str) -> list[pd.DataFrame]:
+def _fetch_source(key: str) -> tuple[list[pd.DataFrame], bool]:
+    """Fetch and normalize one source. Returns (frames, success) where success=True
+    means no exception was raised (empty response is still success=True)."""
     cfg = SOURCES[key]
     name = cfg["name"]
     print(f"  [scraper] Fetching {key.upper()} — {name}")
@@ -89,20 +91,20 @@ def _fetch_source(key: str) -> list[pd.DataFrame]:
             from fetchers.tnt import fetch
         else:
             print(f"    No fetcher for '{key}' — skipping.")
-            return []
+            return [], False
 
         raw = fetch()
         if raw is None or raw.empty:
             print(f"    No data returned.")
-            return []
+            return [], True  # fetch succeeded, source just had no data
 
         df = normalizer.normalize(raw, name)
         print(f"    {len(df)} rows fetched.")
-        return [df]
+        return [df], True
     except Exception as exc:
         print(f"    ERROR fetching {key}: {exc}")
         traceback.print_exc()
-        return []
+        return [], False
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +183,100 @@ def _load_imports_from_volume(upload_dir: str, source_lookup: dict | None = None
             print(f"  [import] ERROR loading {filepath}: {exc}")
 
     return frames
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Machine identity resolution + Listing upsert
+# ---------------------------------------------------------------------------
+
+def _link_machine_and_listing(
+    db,
+    rec: InventoryRecord,
+    row: dict,
+    run_id: int,
+    now: datetime,
+) -> None:
+    """
+    Resolve machine identity for a scraped row and upsert its Listing record.
+    Writes machine_id and listing_id back to rec (caller must flush/commit).
+
+    Called inside _replace_by_source after each InventoryRecord is flushed
+    (so rec.id is already populated). Errors are logged but never crash the
+    scrape — identity linkage is best-effort in Phase 3.
+    """
+    from identity import listing_fingerprint, resolve_machine_identity
+
+    try:
+        # 1. Resolve physical machine identity
+        resolution = resolve_machine_identity(db, row)
+        rec.machine_id = resolution.machine_id
+
+        # 2. Touch machine.last_observed_at
+        machine = db.get(Machine, resolution.machine_id)
+        if machine:
+            machine.last_observed_at = now
+
+        # 3. Determine stable listing identifier
+        source_name = _str_or_none(row.get("source")) or ""
+        id_field = get_listing_id_field(source_name)
+        source_listing_id = _str_or_none(row.get(id_field))
+        # Fall back to fingerprint when no stable ID (inv/serial) is present
+        if not source_listing_id:
+            source_listing_id = listing_fingerprint(row)
+
+        # 4. Find or create the Listing for (source, source_listing_id)
+        existing = (
+            db.query(Listing)
+            .filter(
+                Listing.source == source_name,
+                Listing.source_listing_id == source_listing_id,
+            )
+            .order_by(Listing.created_at.desc())
+            .first()
+        )
+
+        config_str = _build_config(row)
+
+        if existing:
+            # Update mutable fields; reactivate if it had gone inactive
+            existing.machine_id               = resolution.machine_id
+            existing.last_observed_at         = now
+            existing.current_price            = _float_or_none(row.get("price"))
+            existing.current_meter            = _float_or_none(row.get("total_meter"))
+            existing.current_condition        = _str_or_none(row.get("condition"))
+            existing.current_config           = config_str
+            existing.seller                   = source_name
+            existing.state                    = _str_or_none(row.get("state"))
+            existing.is_active                = True
+            existing.consecutive_valid_misses = 0
+            existing.possibly_missing         = False
+            existing.inventory_record_id      = rec.id
+            listing = existing
+        else:
+            sp = db.begin_nested()
+            listing = Listing(
+                machine_id          = resolution.machine_id,
+                source              = source_name,
+                source_listing_id   = source_listing_id,
+                seller              = source_name,
+                state               = _str_or_none(row.get("state")),
+                current_price       = _float_or_none(row.get("price")),
+                current_meter       = _float_or_none(row.get("total_meter")),
+                current_condition   = _str_or_none(row.get("condition")),
+                current_config      = config_str,
+                first_observed_at   = now,
+                last_observed_at    = now,
+                is_active           = True,
+                inventory_record_id = rec.id,
+            )
+            db.add(listing)
+            sp.commit()
+            db.flush()
+
+        rec.listing_id = listing.id
+
+    except Exception as exc:
+        print(f"  [identity] WARNING: could not link row to machine/listing: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +377,9 @@ def _replace_by_source(db, master: pd.DataFrame, run: ScrapeRun) -> int:
         rec = InventoryRecord(first_seen_at=first_seen, is_new=is_new)
         _apply_fields(rec, row, run.id, now)
         db.add(rec)
+        db.flush()  # populate rec.id before Phase 3 linking
+
+        _link_machine_and_listing(db, rec, row, run.id, now)  # Phase 3
 
     db.commit()
     return new_count
@@ -430,11 +529,19 @@ def run_scrape(db, sources: list[str] | None = None, imports_only: bool = False)
 
     try:
         frames: list[pd.DataFrame] = []
+        # source_stats tracks per-source success/count for the history engine
+        source_stats: dict[str, dict] = {}
 
         if not imports_only:
             keys = sources or list(SOURCES.keys())
             for key in keys:
-                frames.extend(_fetch_source(key))
+                source_frames, fetch_ok = _fetch_source(key)
+                frames.extend(source_frames)
+                source_name = SOURCES[key]["name"]
+                source_stats[source_name] = {
+                    "success": fetch_ok,
+                    "record_count": sum(len(f) for f in source_frames),
+                }
 
         # Build filename→display_name lookup from DB so custom sources are resolved correctly
         from db import UploadedFile as _UF
@@ -460,6 +567,13 @@ def run_scrape(db, sources: list[str] | None = None, imports_only: bool = False)
         master = pd.concat(frames, ignore_index=True)
         master = _dedup(master)
 
+        # Fill in stats for manual import sources (not captured in _fetch_source loop)
+        for sn in master["source"].dropna().unique():
+            sn = str(sn)
+            if sn not in source_stats:
+                count = int((master["source"] == sn).sum())
+                source_stats[sn] = {"success": True, "record_count": count}
+
         new_count = _replace_by_source(db, master, run)
 
         run.status = "success"
@@ -469,6 +583,11 @@ def run_scrape(db, sources: list[str] | None = None, imports_only: bool = False)
         db.commit()
 
         print(f"[scraper] Run #{run.id} done — {len(master)} records, {new_count} new.")
+
+        # Phase 4: history engine (observations + events + miss counters)
+        from history import run_history_engine
+        run_history_engine(db, run, source_stats)
+        db.commit()
 
         _check_and_notify(db, run)
 

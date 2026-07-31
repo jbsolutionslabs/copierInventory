@@ -279,6 +279,53 @@ def _link_machine_and_listing(
         print(f"  [identity] WARNING: could not link row to machine/listing: {exc}")
 
 
+def _rec_to_identity_row(rec: InventoryRecord) -> dict:
+    """Reconstruct a row dict from an InventoryRecord for identity resolution."""
+    return {
+        "source":       rec.source,
+        "brand":        rec.brand,
+        "model":        rec.model,
+        "serial":       rec.serial,
+        "inv":          rec.inv,
+        "state":        rec.state,
+        "price":        rec.price,
+        "total_meter":  rec.total_meter,
+        "condition":    rec.condition,
+        "feeder_model": rec.feeder_model,
+        "capacity":     rec.capacity,
+        "finisher":     rec.finisher,
+        "print_speed":  rec.print_speed,
+        "scan":         rec.scan,
+        "fax":          rec.fax,
+        "is_color":     rec.is_color,
+    }
+
+
+def _resolve_all_identities(db, run: ScrapeRun, now: datetime) -> None:
+    """
+    Second-pass identity resolution: runs after inventory records are committed.
+    Links each InventoryRecord in this run to a Machine and Listing.
+    Commits in batches of 50 to keep transactions short.
+    """
+    _BATCH = 50
+    records = (
+        db.query(InventoryRecord)
+        .filter(InventoryRecord.scrape_run_id == run.id)
+        .all()
+    )
+    total = len(records)
+    if not total:
+        return
+    print(f"  [identity] Resolving identities for {total} records...")
+    for i, rec in enumerate(records):
+        row = _rec_to_identity_row(rec)
+        _link_machine_and_listing(db, rec, row, run.id, now)
+        if (i + 1) % _BATCH == 0:
+            db.commit()
+    db.commit()
+    print(f"  [identity] Done ({total} records linked).")
+
+
 # ---------------------------------------------------------------------------
 # DB replace-by-source
 # ---------------------------------------------------------------------------
@@ -361,7 +408,7 @@ def _replace_by_source(db, master: pd.DataFrame, run: ScrapeRun) -> int:
         print(f"  [db] Cleared {deleted} old record(s) for source '{source}'")
     db.flush()
 
-    # --- Step 3: insert fresh rows ---
+    # --- Step 3: insert fresh rows (batch — no per-row identity queries) ---
     new_count = 0
     for _, pandas_row in master.iterrows():
         row = _row_to_dict(pandas_row)
@@ -383,9 +430,7 @@ def _replace_by_source(db, master: pd.DataFrame, run: ScrapeRun) -> int:
         rec = InventoryRecord(first_seen_at=first_seen, is_new=is_new)
         _apply_fields(rec, row, run.id, now)
         db.add(rec)
-        db.flush()  # populate rec.id before Phase 3 linking
-
-        _link_machine_and_listing(db, rec, row, run.id, now)  # Phase 3
+        # Identity linking happens in a separate pass after commit (see _resolve_all_identities)
 
     db.commit()
     return new_count
@@ -589,6 +634,9 @@ def run_scrape(db, sources: list[str] | None = None, imports_only: bool = False)
         db.commit()
 
         print(f"[scraper] Run #{run.id} done — {len(master)} records, {new_count} new.")
+
+        # Phase 3: identity resolution (separate pass after fast inventory commit)
+        _resolve_all_identities(db, run, now)
 
         # Phase 4: history engine (observations + events + miss counters)
         from history import run_history_engine

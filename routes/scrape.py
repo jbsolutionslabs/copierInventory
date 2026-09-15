@@ -51,6 +51,14 @@ def delete_by_source(source_name: str, db: Session = Depends(get_db)):
     return {"ok": True, "deleted": deleted, "source": source_name}
 
 
+@router.post("/api/admin/cleanup")
+def trigger_cleanup(db: Session = Depends(get_db)):
+    """Run data retention cleanup immediately. Returns deleted row counts per table."""
+    from cleanup import run_retention_cleanup
+    results = run_retention_cleanup(db)
+    return {"ok": True, "deleted": results}
+
+
 @router.get("/api/scrape/status")
 def scrape_status(db: Session = Depends(get_db)):
     """Return the most recent ScrapeRun record."""

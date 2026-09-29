@@ -17,9 +17,12 @@ log = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./inventory.db")
 
-# Railway provides postgres:// URIs; SQLAlchemy 2.x needs postgresql://
+# Railway provides postgres:// or postgresql:// URIs; force psycopg2 driver explicitly
+# to avoid SQLAlchemy 2.x auto-selecting psycopg v3 (which is not installed).
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and "+psycopg" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 _is_sqlite = DATABASE_URL.startswith("sqlite")
 

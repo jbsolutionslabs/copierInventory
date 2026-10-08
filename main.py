@@ -3,11 +3,14 @@
 import os
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import init_db
 from scheduler import start_scheduler, stop_scheduler
+
+load_dotenv()
 
 ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS",
@@ -48,6 +51,7 @@ app.add_middleware(
 )
 
 # Mount route modules
+from routes.chat      import router as chat_router
 from routes.inventory import router as inventory_router
 from routes.scrape    import router as scrape_router
 from routes.uploads   import router as uploads_router
@@ -57,6 +61,7 @@ app.include_router(inventory_router)
 app.include_router(uploads_router)
 app.include_router(watchlist_router)
 app.include_router(scrape_router)
+app.include_router(chat_router)
 
 
 @app.get("/")

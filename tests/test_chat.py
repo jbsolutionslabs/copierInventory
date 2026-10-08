@@ -169,3 +169,95 @@ def test_update_watchlist_raises_on_missing_id(db):
         _update_watchlist(db, id="nonexistent-id", notes="x")
 
     assert exc_info.value.status_code == 404
+
+
+# =============================================================================
+# /api/chat endpoint
+# =============================================================================
+
+def test_chat_rejects_wrong_password(monkeypatch, db):
+    from routes.chat import ChatMessage, ChatRequest, chat
+
+    monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+
+    req = ChatRequest(password="wrong", messages=[ChatMessage(role="user", content="hi")])
+
+    with pytest.raises(HTTPException) as exc_info:
+        chat(req, db)
+
+    assert exc_info.value.status_code == 401
+
+
+def test_chat_rejects_missing_password_env(monkeypatch, db):
+    from routes.chat import ChatMessage, ChatRequest, chat
+
+    monkeypatch.delenv("CHAT_PASSWORD", raising=False)
+
+    req = ChatRequest(password="anything", messages=[ChatMessage(role="user", content="hi")])
+
+    with pytest.raises(HTTPException) as exc_info:
+        chat(req, db)
+
+    assert exc_info.value.status_code == 401
+
+
+def test_chat_empty_messages_skips_anthropic_call(monkeypatch, db):
+    from routes.chat import ChatRequest, chat
+
+    monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+
+    with patch("routes.chat.anthropic.Anthropic") as mock_anthropic_cls:
+        req = ChatRequest(password="correct-horse", messages=[])
+        result = chat(req, db)
+
+    assert result.reply == ""
+    mock_anthropic_cls.assert_not_called()
+
+
+def test_chat_trims_history_and_returns_reply(monkeypatch, db):
+    from routes.chat import ChatMessage, ChatRequest, chat
+
+    monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+
+    fake_message = SimpleNamespace(content=[SimpleNamespace(type="text", text="mocked reply")])
+    mock_client = MagicMock()
+    mock_client.beta.messages.tool_runner.return_value = [fake_message]
+
+    with patch("routes.chat.anthropic.Anthropic", return_value=mock_client):
+        long_history = [ChatMessage(role="user", content=f"message {i}") for i in range(20)]
+        req = ChatRequest(password="correct-horse", messages=long_history)
+        result = chat(req, db)
+
+    assert result.reply == "mocked reply"
+
+    sent_messages = mock_client.beta.messages.tool_runner.call_args.kwargs["messages"]
+    assert len(sent_messages) == 12
+    assert sent_messages[-1]["content"] == "message 19"
+
+
+def test_chat_falls_back_when_no_text_block(monkeypatch, db):
+    from routes.chat import ChatMessage, ChatRequest, chat
+
+    monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+
+    fake_message = SimpleNamespace(content=[SimpleNamespace(type="tool_use", text=None)])
+    mock_client = MagicMock()
+    mock_client.beta.messages.tool_runner.return_value = [fake_message]
+
+    with patch("routes.chat.anthropic.Anthropic", return_value=mock_client):
+        req = ChatRequest(password="correct-horse", messages=[ChatMessage(role="user", content="hi")])
+        result = chat(req, db)
+
+    assert result.reply == "I wasn't able to generate a response to that — try rephrasing your question."
+
+
+def test_update_watchlist_tool_wrapper_returns_error_json_on_missing_id(db):
+    from routes.chat import _make_tools
+
+    tools = _make_tools(db)
+    update_tool = next(t for t in tools if t.name == "update_watchlist_item")
+
+    result_json = update_tool(id="nonexistent-id", notes="x")
+    result = json.loads(result_json)
+
+    assert "error" in result

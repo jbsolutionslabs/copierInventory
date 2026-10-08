@@ -12,3 +12,4 @@ openpyxl
 lxml
 playwright
 python-dotenv
+anthropic

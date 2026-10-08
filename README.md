@@ -275,6 +275,23 @@ To change the schedule, edit the `cron` line in `.github/workflows/refresh.yml`:
 
 ---
 
+## AI Chat Assistant
+
+A floating `💬` chat widget (backend: `routes/chat.py`, FastAPI, not part of
+the static GitHub Pages site) lets the team ask natural-language questions
+against live inventory and read/add/edit (not delete) customer watchlist
+entries, backed by Claude Sonnet 5 tool use.
+
+**Required environment variables** (set in `.env` for local runs, and in the
+backend host's environment for production — never commit real values):
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key, used server-side only |
+| `CHAT_PASSWORD` | Shared passphrase gating the chat widget — anyone who knows it can use the assistant and its watchlist write access |
+
+---
+
 ## Wholesaler Contact List
 
 | Company | Contact | Phone | Website | Status |

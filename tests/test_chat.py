@@ -422,6 +422,19 @@ def test_update_watchlist_item_docstring_warns_about_clearing_fields():
     assert "cannot" in update_tool.description.lower() or "clear" in update_tool.description.lower()
 
 
+def test_system_prompt_instructs_name_lookup_before_adding_too():
+    # Discovered via live verification: when asked to add a new request
+    # for a customer who already has one, the model used the user's
+    # literal phrasing ("Joey") instead of the existing canonical name
+    # ("Joey Smith") already on file. The frontend groups watchlist cards
+    # by exact lowercased name, so that creates a second, unlinked card
+    # for the same real customer. The system prompt only told it to look
+    # up the customer first for edits -- extend that to adds too.
+    from routes.chat import SYSTEM_PROMPT
+
+    assert "before adding a new request for them" in SYSTEM_PROMPT.lower()
+
+
 def test_chat_logs_upstream_error_before_raising(monkeypatch, db, caplog):
     from routes.chat import ChatMessage, ChatRequest, chat
 

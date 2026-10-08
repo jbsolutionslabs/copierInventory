@@ -14,6 +14,12 @@ from sqlalchemy.orm import Session
 from aggregator import _find_matches
 from db import InventoryRecord, ScrapeRun, WatchlistItem, get_db
 from routes.inventory import _record_to_dict
+from routes.watchlist import (
+    WatchlistItemIn,
+    _orm_to_dict,
+    add_watchlist_item as _wl_add_route,
+    update_watchlist_item as _wl_update_route,
+)
 
 router = APIRouter()
 
@@ -62,3 +68,57 @@ def _query_inventory(
         ]
 
     return {"count": len(matches), "records": matches[:200]}
+
+
+def _get_watchlist(db: Session, customer_name: str | None = None) -> dict:
+    items = db.query(WatchlistItem).order_by(WatchlistItem.created_at).all()
+    if customer_name:
+        needle = customer_name.strip().lower()
+        items = [i for i in items if needle in (i.name or "").lower()]
+    return {"items": [_orm_to_dict(i) for i in items]}
+
+
+def _add_watchlist(
+    db: Session,
+    cust: str,
+    email: str | None = None,
+    phone: str | None = None,
+    brand: str | None = None,
+    model: str | None = None,
+    max_meter: float | None = None,
+    max_price: float | None = None,
+    color: str | None = None,
+    state: str | None = None,
+    finisher: str | None = None,
+    fax: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    item = WatchlistItemIn(
+        cust=cust, email=email, phone=phone, brand=brand, model=model,
+        maxMeter=max_meter, maxPrice=max_price, color=color, state=state,
+        finisher=finisher, fax=fax, notes=notes,
+    )
+    return _wl_add_route(item, db)
+
+
+def _update_watchlist(
+    db: Session,
+    id: str,
+    email: str | None = None,
+    phone: str | None = None,
+    brand: str | None = None,
+    model: str | None = None,
+    max_meter: float | None = None,
+    max_price: float | None = None,
+    color: str | None = None,
+    state: str | None = None,
+    finisher: str | None = None,
+    fax: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    item = WatchlistItemIn(
+        id=id, email=email, phone=phone, brand=brand, model=model,
+        maxMeter=max_meter, maxPrice=max_price, color=color, state=state,
+        finisher=finisher, fax=fax, notes=notes,
+    )
+    return _wl_update_route(id, item, db)

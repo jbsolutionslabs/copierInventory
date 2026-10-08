@@ -6,11 +6,13 @@
 # triggers the app's lifespan (init_db / start_scheduler).
 
 import json
+import logging
 import uuid
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import anthropic
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -218,27 +220,35 @@ def test_chat_trims_history_and_returns_reply(monkeypatch, db):
     from routes.chat import ChatMessage, ChatRequest, chat
 
     monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
     fake_message = SimpleNamespace(content=[SimpleNamespace(type="text", text="mocked reply")])
     mock_client = MagicMock()
     mock_client.beta.messages.tool_runner.return_value = [fake_message]
 
     with patch("routes.chat.anthropic.Anthropic", return_value=mock_client):
-        long_history = [ChatMessage(role="user", content=f"message {i}") for i in range(20)]
+        # Realistic alternating conversation ending on the user's latest
+        # message, same shape the frontend actually sends.
+        long_history = [
+            ChatMessage(role="user" if i % 2 == 0 else "assistant", content=f"message {i}")
+            for i in range(21)
+        ]
         req = ChatRequest(password="correct-horse", messages=long_history)
         result = chat(req, db)
 
     assert result.reply == "mocked reply"
 
     sent_messages = mock_client.beta.messages.tool_runner.call_args.kwargs["messages"]
-    assert len(sent_messages) == 12
-    assert sent_messages[-1]["content"] == "message 19"
+    assert sent_messages[0]["role"] == "user"
+    assert len(sent_messages) <= 12
+    assert sent_messages[-1]["content"] == "message 20"
 
 
 def test_chat_falls_back_when_no_text_block(monkeypatch, db):
     from routes.chat import ChatMessage, ChatRequest, chat
 
     monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
     fake_message = SimpleNamespace(content=[SimpleNamespace(type="tool_use", text=None)])
     mock_client = MagicMock()
@@ -261,3 +271,170 @@ def test_update_watchlist_tool_wrapper_returns_error_json_on_missing_id(db):
     result = json.loads(result_json)
 
     assert "error" in result
+
+
+# =============================================================================
+# Fix-pass tests (from final review findings)
+# =============================================================================
+
+def test_trim_history_keeps_first_message_as_user_role():
+    # Real conversations always alternate user/assistant and end on the
+    # user turn just sent (that's when the frontend POSTs). A naive
+    # messages[-N:] slice of an odd-length alternating list can land on
+    # an assistant message first, which the API rejects outright.
+    from routes.chat import _trim_history
+
+    messages = []
+    for i in range(21):
+        role = "user" if i % 2 == 0 else "assistant"
+        messages.append({"role": role, "content": f"m{i}"})
+
+    result = _trim_history(messages, max_history=12)
+
+    assert result[0]["role"] == "user"
+    assert len(result) <= 12
+    assert result[-1]["content"] == "m20"
+
+
+def test_trim_history_short_conversation_untouched():
+    from routes.chat import _trim_history
+
+    messages = [{"role": "user", "content": "hi"}]
+
+    result = _trim_history(messages, max_history=12)
+
+    assert result == messages
+
+
+def test_query_inventory_condition_filter_is_substring_match(db):
+    # Real inventory data never has a bare "Used"/"New"/"Refurbished"
+    # condition value -- it's free text like "Select / Good / Pass". An
+    # exact-match filter can never match anything real.
+    from routes.chat import _query_inventory
+
+    _make_inventory(db, condition="Select / Good / Pass")
+    _make_inventory(db, condition="Part Complete / Fair")
+
+    result = _query_inventory(db, condition="Pass")
+
+    assert result["count"] == 1
+
+
+def test_query_inventory_excludes_unknown_meter_from_max_meter_filter(db):
+    # A record with no meter reading at all must not silently pass a
+    # "under X meters" ceiling -- the ceiling can't be confirmed.
+    from routes.chat import _query_inventory
+
+    _make_inventory(db, total_meter=50000)
+    _make_inventory(db, total_meter=None)
+
+    result = _query_inventory(db, max_meter=60000)
+
+    assert result["count"] == 1
+    assert result["records"][0]["total"] == 50000
+
+
+def test_query_inventory_excludes_unknown_price_from_max_price_filter(db):
+    from routes.chat import _query_inventory
+
+    _make_inventory(db, price=2000)
+    _make_inventory(db, price=None)
+
+    result = _query_inventory(db, max_price=3000)
+
+    assert result["count"] == 1
+    assert result["records"][0]["price"] == 2000
+
+
+def test_query_inventory_color_filter_is_case_insensitive(db):
+    from routes.chat import _query_inventory
+
+    _make_inventory(db, is_color="YES")
+    _make_inventory(db, is_color="NO")
+
+    result = _query_inventory(db, color="yes")
+
+    assert result["count"] == 1
+    assert result["records"][0]["isColor"] == "YES"
+
+
+def test_query_inventory_records_omit_free_text_fields(db):
+    # description/notes are free text scraped from third-party wholesaler
+    # sites and cost real tokens per call; they're also the only path by
+    # which untrusted scraped content could reach the model's context in
+    # the same turn as write-capable tools. Drop them from what the tool
+    # returns.
+    from routes.chat import _query_inventory
+
+    _make_inventory(db, description="some scraped text", notes="some scraped notes")
+
+    result = _query_inventory(db, brand="Canon")
+
+    assert "description" not in result["records"][0]
+    assert "notes" not in result["records"][0]
+    assert result["records"][0]["brand"] == "Canon"
+
+
+def test_chat_missing_api_key_returns_clean_500(monkeypatch, db):
+    from routes.chat import ChatMessage, ChatRequest, chat
+
+    monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    req = ChatRequest(password="correct-horse", messages=[ChatMessage(role="user", content="hi")])
+
+    with pytest.raises(HTTPException) as exc_info:
+        chat(req, db)
+
+    assert exc_info.value.status_code == 500
+    assert "ANTHROPIC_API_KEY" in exc_info.value.detail
+
+
+def test_chat_passes_max_iterations_and_timeout_to_tool_runner(monkeypatch, db):
+    from routes.chat import ChatMessage, ChatRequest, chat
+
+    monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    fake_message = SimpleNamespace(content=[SimpleNamespace(type="text", text="ok")])
+    mock_client = MagicMock()
+    mock_client.beta.messages.tool_runner.return_value = [fake_message]
+
+    with patch("routes.chat.anthropic.Anthropic", return_value=mock_client):
+        req = ChatRequest(password="correct-horse", messages=[ChatMessage(role="user", content="hi")])
+        chat(req, db)
+
+    call_kwargs = mock_client.beta.messages.tool_runner.call_args.kwargs
+    assert call_kwargs["max_iterations"] == 10
+    assert call_kwargs["timeout"] == 90
+
+
+def test_update_watchlist_item_docstring_warns_about_clearing_fields():
+    # None means "leave this field alone", so this tool can never clear a
+    # field -- only replace it. The model needs to know that so it
+    # doesn't claim success for an impossible "remove the price cap"
+    # request.
+    from routes.chat import _make_tools
+
+    tools = _make_tools(db=MagicMock())
+    update_tool = next(t for t in tools if t.name == "update_watchlist_item")
+
+    assert "cannot" in update_tool.description.lower() or "clear" in update_tool.description.lower()
+
+
+def test_chat_logs_upstream_error_before_raising(monkeypatch, db, caplog):
+    from routes.chat import ChatMessage, ChatRequest, chat
+
+    monkeypatch.setenv("CHAT_PASSWORD", "correct-horse")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    mock_client = MagicMock()
+    mock_client.beta.messages.tool_runner.side_effect = anthropic.APIConnectionError(request=MagicMock())
+
+    with patch("routes.chat.anthropic.Anthropic", return_value=mock_client):
+        with caplog.at_level(logging.ERROR):
+            req = ChatRequest(password="correct-horse", messages=[ChatMessage(role="user", content="hi")])
+            with pytest.raises(HTTPException):
+                chat(req, db)
+
+    assert any("Claude" in r.message or "Anthropic" in r.message for r in caplog.records)

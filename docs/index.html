@@ -182,6 +182,7 @@ tbody tr:nth-child(even){background:#F8FAFD}
 .chat-msg{margin-bottom:10px;max-width:85%;padding:8px 11px;border-radius:10px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}
 .chat-msg.user{background:var(--navy);color:#fff;margin-left:auto;border-bottom-right-radius:2px}
 .chat-msg.assistant{background:#F0F3F9;color:var(--text);margin-right:auto;border-bottom-left-radius:2px}
+.chat-msg.error{background:#FDEDEC;color:#922B21;margin-right:auto;border-bottom-left-radius:2px}
 #chat-input-row{display:flex;gap:6px;padding:10px;border-top:1px solid var(--bdr);flex-shrink:0}
 #chat-input{flex:1;border:1.5px solid var(--bdr);border-radius:6px;padding:7px 9px;font-size:12px;font-family:inherit;resize:none}
 #chat-pw-row{padding:14px;font-size:12px}
@@ -1128,22 +1129,26 @@ async function sendChatMessage() {
   el.scrollTop = el.scrollHeight;
 
   try {
+    // Only real user/assistant turns go to the API -- a local-only error
+    // notice (role 'error') would otherwise read back to Claude as its
+    // own prior turn claiming a failure it never made.
+    const apiMessages = chatHistory.filter(m => m.role === 'user' || m.role === 'assistant');
     const res = await fetch(API_BASE + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: chatPassword, messages: chatHistory }),
+      body: JSON.stringify({ password: chatPassword, messages: apiMessages }),
     });
     document.getElementById('chat-loading')?.remove();
 
     if (res.status === 401) {
       localStorage.removeItem('ic_chat_pw');
       chatPassword = null;
-      chatHistory.push({ role: 'assistant', content: 'Your passphrase is no longer valid. Please reopen the chat and re-enter it.' });
+      chatHistory.push({ role: 'error', content: 'Your passphrase is no longer valid. Please reopen the chat and re-enter it.' });
       renderChatMessages();
       return;
     }
     if (!res.ok) {
-      chatHistory.push({ role: 'assistant', content: 'Something went wrong — please try again.' });
+      chatHistory.push({ role: 'error', content: 'Something went wrong — please try again.' });
       renderChatMessages();
       return;
     }
@@ -1152,7 +1157,7 @@ async function sendChatMessage() {
     renderChatMessages();
   } catch (e) {
     document.getElementById('chat-loading')?.remove();
-    chatHistory.push({ role: 'assistant', content: 'Something went wrong — please try again.' });
+    chatHistory.push({ role: 'error', content: 'Something went wrong — please try again.' });
     renderChatMessages();
   }
 }

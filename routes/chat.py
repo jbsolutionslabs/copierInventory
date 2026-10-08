@@ -2,7 +2,9 @@
 # live inventory and read/write (no delete) access to the customer
 # watchlist, backed by Claude Sonnet 5 tool use.
 
+import hmac
 import json
+import logging
 import os
 
 import anthropic
@@ -21,6 +23,8 @@ from routes.watchlist import (
     update_watchlist_item as _wl_update_route,
 )
 
+log = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -38,7 +42,16 @@ def _query_inventory(
     """Filter live inventory. Reuses aggregator._find_matches for the
     fields it already supports; min_meter and condition (which
     _find_matches doesn't support, since watchlist matching never needed
-    them) are applied as additional local filtering."""
+    them) are applied as additional local filtering.
+
+    Real inventory data has no clean "Used"/"New"/"Refurbished" vocabulary
+    (condition is free text like "Select / Good / Pass") and is frequently
+    missing meter/price entirely, so: condition matches by substring, and
+    a missing meter reading is excluded from a max_meter ceiling rather
+    than silently passing it (max_price already excludes unknowns inside
+    _find_matches). color is uppercased before being handed to
+    _find_matches, whose comparison is case-sensitive.
+    """
     last_run = (
         db.query(ScrapeRun)
         .filter(ScrapeRun.status == "success")
@@ -48,26 +61,39 @@ def _query_inventory(
     run_started_at = last_run.started_at if last_run else None
     all_records = db.query(InventoryRecord).all()
     inventory_json = [_record_to_dict(r, run_started_at) for r in all_records]
+    # _record_to_dict collapses a missing meter reading to 0 (same as a
+    # genuine zero), so track the raw value separately by object identity
+    # -- _find_matches returns the same dict objects it was given.
+    raw_meter_by_id = {id(d): rec.total_meter for rec, d in zip(all_records, inventory_json)}
 
     req = {
         "brand": brand or "",
         "model": model_contains or "",
-        "color": color or "",
+        "color": (color or "").upper(),
         "state": state or "",
         "maxMeter": max_meter,
         "maxPrice": max_price,
     }
     matches = _find_matches(req, inventory_json)
 
+    if max_meter is not None:
+        matches = [m for m in matches if raw_meter_by_id.get(id(m)) is not None]
     if min_meter is not None:
         matches = [m for m in matches if (m.get("total") or 0) >= min_meter]
     if condition:
-        matches = [
-            m for m in matches
-            if (m.get("condition") or "").lower() == condition.strip().lower()
-        ]
+        needle = condition.strip().lower()
+        matches = [m for m in matches if needle in (m.get("condition") or "").lower()]
 
-    return {"count": len(matches), "records": matches[:200]}
+    # Drop free-text fields scraped from third-party wholesaler sites --
+    # they cost tokens on every call and are the only path by which
+    # untrusted scraped content could reach the model's context in the
+    # same turn as the write-capable watchlist tools.
+    trimmed = [
+        {k: v for k, v in m.items() if k not in ("description", "notes")}
+        for m in matches
+    ]
+
+    return {"count": len(trimmed), "records": trimmed[:100]}
 
 
 def _get_watchlist(db: Session, customer_name: str | None = None) -> dict:
@@ -126,6 +152,19 @@ def _update_watchlist(
 
 MAX_HISTORY = 12
 
+
+def _trim_history(messages: list[dict], max_history: int = MAX_HISTORY) -> list[dict]:
+    """Keep the last max_history messages, then drop any leading
+    non-user messages. A real conversation alternates user/assistant and
+    always ends on a user turn (that's when a request fires), so taking
+    an even-sized tail of an odd-length list can otherwise land on an
+    assistant message first -- the API requires the first message to be
+    from the user and rejects the request outright if it isn't."""
+    trimmed = messages[-max_history:]
+    while trimmed and trimmed[0]["role"] != "user":
+        trimmed.pop(0)
+    return trimmed
+
 SYSTEM_PROMPT = (
     "You are an internal assistant for a copier wholesaler inventory "
     "aggregation tool used by a small sales team. You have tools to look "
@@ -183,7 +222,9 @@ def _make_tools(db: Session):
             max_price: Maximum price in dollars (inclusive).
             color: "YES" for color units only, "NO" for black & white only.
             state: Two-letter US state code the unit is located in.
-            condition: Condition filter, e.g. "Used", "Refurbished", "New".
+            condition: Substring match against condition, e.g. "Pass" or "Fair".
+                Condition is free text (e.g. "Select / Good / Pass") and is
+                blank on most records -- don't assume a clean vocabulary.
         """
         return json.dumps(_query_inventory(
             db, brand=brand, model_contains=model_contains, max_meter=max_meter,
@@ -252,7 +293,7 @@ def _make_tools(db: Session):
         fax: str | None = None,
         notes: str | None = None,
     ) -> str:
-        """Update fields on an existing customer watchlist request. Only provided fields are changed.
+        """Update fields on an existing customer watchlist request. Only provided fields are changed -- you cannot clear a field this way, only replace it with a new value. If asked to clear/remove a field, say that has to be done manually in the Customer Watchlist tab.
 
         Args:
             id: The watchlist item's id, from a prior get_watchlist call. Required.
@@ -284,14 +325,17 @@ def _make_tools(db: Session):
 @router.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     expected_password = os.environ.get("CHAT_PASSWORD")
-    if not expected_password or req.password != expected_password:
+    if not expected_password or not hmac.compare_digest(req.password, expected_password):
         raise HTTPException(status_code=401, detail="invalid passphrase")
 
-    history = [{"role": m.role, "content": m.content} for m in req.messages][-MAX_HISTORY:]
+    history = _trim_history([{"role": m.role, "content": m.content} for m in req.messages])
     if not history:
         # Used by the frontend to validate the passphrase without spending
         # an Anthropic API call.
         return ChatResponse(reply="")
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="server misconfigured: ANTHROPIC_API_KEY is not set")
 
     tools = _make_tools(db)
 
@@ -304,15 +348,20 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
             output_config={"effort": "medium"},
             tools=tools,
             messages=history,
+            max_iterations=10,
+            timeout=90,
         )
         last_message = None
         for message in runner:
             last_message = message
     except anthropic.AuthenticationError:
+        log.error("Anthropic authentication failed -- check ANTHROPIC_API_KEY")
         raise HTTPException(status_code=500, detail="server misconfigured: invalid Anthropic API key")
     except anthropic.APIStatusError as e:
+        log.error("Claude API error: %s", e.message)
         raise HTTPException(status_code=502, detail=f"Claude API error: {e.message}")
-    except anthropic.APIConnectionError:
+    except anthropic.APIConnectionError as e:
+        log.error("Could not reach Claude API: %s", e)
         raise HTTPException(status_code=502, detail="could not reach Claude API")
 
     if last_message is None:

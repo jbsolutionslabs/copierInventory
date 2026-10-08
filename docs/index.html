@@ -160,6 +160,32 @@ tbody tr:nth-child(even){background:#F8FAFD}
 .upload-item{padding:4px 8px;background:#F8FAFD;border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
 .upload-item .remove{color:#922B21;cursor:pointer;font-size:10px;padding:2px 6px;background:#FADBD8;border-radius:4px;border:none}
 #upload-status{font-size:11px;color:var(--muted);min-height:18px}
+
+/* ── Email modal ── */
+.email-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--bdr);border-radius:8px;margin-bottom:8px;cursor:pointer;background:#FAFCFF;transition:all .15s}
+.email-opt:hover{background:#EEF3FF;border-color:var(--navy3)}
+.email-opt .ico{font-size:18px;flex-shrink:0}
+.email-opt .lbl{font-weight:700;color:var(--navy);font-size:12.5px}
+.email-opt .sub{font-size:10.5px;color:var(--muted);margin-top:1px}
+#email-preview{width:100%;min-height:140px;font-size:11px;font-family:inherit;border:1.5px solid var(--bdr);border-radius:6px;padding:8px;color:var(--text);resize:vertical;margin-top:4px;box-sizing:border-box}
+#email-copy-status{font-size:11px;color:#1E8449;font-weight:700;margin-top:2px;margin-bottom:8px;min-height:14px}
+
+/* ── AI chat widget ── */
+#chat-fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--navy);color:#fff;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:200;display:flex;align-items:center;justify-content:center}
+#chat-fab:hover{background:var(--navy2)}
+#chat-panel{position:fixed;bottom:86px;right:20px;width:360px;max-width:92vw;height:480px;max-height:70vh;background:#fff;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.3);display:none;flex-direction:column;z-index:200;overflow:hidden}
+#chat-panel.open{display:flex}
+#chat-panel-hdr{background:var(--navy);color:#fff;padding:10px 14px;font-weight:800;font-size:13px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+#chat-panel-hdr .close{cursor:pointer;font-size:16px;opacity:.8}
+#chat-panel-hdr .close:hover{opacity:1}
+#chat-messages{flex:1;overflow-y:auto;padding:12px;font-size:12px}
+.chat-msg{margin-bottom:10px;max-width:85%;padding:8px 11px;border-radius:10px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}
+.chat-msg.user{background:var(--navy);color:#fff;margin-left:auto;border-bottom-right-radius:2px}
+.chat-msg.assistant{background:#F0F3F9;color:var(--text);margin-right:auto;border-bottom-left-radius:2px}
+#chat-input-row{display:flex;gap:6px;padding:10px;border-top:1px solid var(--bdr);flex-shrink:0}
+#chat-input{flex:1;border:1.5px solid var(--bdr);border-radius:6px;padding:7px 9px;font-size:12px;font-family:inherit;resize:none}
+#chat-pw-row{padding:14px;font-size:12px}
+#chat-pw-row input{width:100%;border:1.5px solid var(--bdr);border-radius:6px;padding:7px 9px;font-size:12px;margin:8px 0;box-sizing:border-box}
 </style>
 </head>
 <body>
@@ -392,6 +418,54 @@ tbody tr:nth-child(even){background:#F8FAFD}
       <button class="btn bc" onclick="closeModal()">Cancel</button>
       <button class="btn bs" id="btn-upload" onclick="uploadFiles()" disabled>Upload Files</button>
     </div>
+  </div>
+</div>
+
+<!-- ── Email modal ─────────────────────────────────────────────────────── -->
+<div class="modal-bg" id="email-modal">
+  <div class="modal">
+    <h2 id="email-modal-title">✉ Email Customer</h2>
+    <p class="tip" style="margin-bottom:10px">Choose how to send this — mailto: links don't always open the app you expect, so pick whichever works on your device.</p>
+
+    <div class="email-opt" onclick="openMailApp()">
+      <div class="ico">📧</div>
+      <div><div class="lbl">Open in Mail App</div><div class="sub">Uses your device's default email application</div></div>
+    </div>
+    <div class="email-opt" onclick="openOutlookWeb()">
+      <div class="ico">🅾️</div>
+      <div><div class="lbl">Open in Outlook Web</div><div class="sub">Opens a prefilled draft at outlook.office.com</div></div>
+    </div>
+    <div class="email-opt" onclick="copyEmailToClipboard()">
+      <div class="ico">📋</div>
+      <div><div class="lbl">Copy to Clipboard</div><div class="sub">Paste into Gmail or any other mail client</div></div>
+    </div>
+
+    <div id="email-copy-status"></div>
+    <textarea id="email-preview" readonly onclick="this.select()"></textarea>
+
+    <div class="modal-row">
+      <button class="btn bc" onclick="closeEmailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI chat widget ─────────────────────────────────────────────────── -->
+<button id="chat-fab" onclick="toggleChatPanel()">💬</button>
+<div id="chat-panel">
+  <div id="chat-panel-hdr">
+    <span>✨ Ask AI</span>
+    <span class="close" onclick="toggleChatPanel()">✕</span>
+  </div>
+  <div id="chat-pw-row" style="display:none">
+    <div>Enter the team passphrase to use the assistant:</div>
+    <input type="password" id="chat-pw-input" placeholder="Passphrase" onkeydown="if(event.key==='Enter')submitChatPassword()">
+    <button class="btn bs" style="width:100%" onclick="submitChatPassword()">Unlock</button>
+    <div id="chat-pw-error" style="color:#922B21;font-size:11px;margin-top:6px"></div>
+  </div>
+  <div id="chat-messages" style="display:none"></div>
+  <div id="chat-input-row" style="display:none">
+    <textarea id="chat-input" rows="1" placeholder="Ask about inventory or a customer..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage();}"></textarea>
+    <button class="btn bs" onclick="sendChatMessage()">➤</button>
   </div>
 </div>
 
@@ -920,8 +994,11 @@ function criteriaTags(req) {
   return tags.map(t => `<span class="tag">${t}</span>`).join('');
 }
 
+let pendingEmail = null;
+
 function emailCustomer(req, matches) {
-  const subject = encodeURIComponent(`Equipment Match Found \u2014 ${req.brand || 'Your Request'} ${req.model || ''}`.trim());
+  const to      = req.email || '';
+  const subject = `Equipment Match Found \u2014 ${req.brand || 'Your Request'} ${req.model || ''}`.trim();
   let body = `Hi ${(req.cust || req.name || '').split(' ')[0] || ''},\n\nGood news \u2014 we found ${matches.length} unit(s) matching what you're looking for:\n\n`;
   matches.slice(0, 10).forEach(m => {
     body += `\u2022 ${m.brand} ${m.model} \u2014 Meter: ${m.total ? m.total.toLocaleString() : 'N/A'}`;
@@ -931,7 +1008,153 @@ function emailCustomer(req, matches) {
   });
   if (matches.length > 10) body += `\n\u2026and ${matches.length - 10} more.\n`;
   body += `\nLet me know if you'd like more details or to move forward on any of these.\n\nBest,\nAndy`;
-  window.location.href = `mailto:${req.email || ''}?subject=${subject}&body=${encodeURIComponent(body)}`;
+
+  pendingEmail = { to, subject, body };
+  document.getElementById('email-modal-title').textContent = `\u2709 Email ${req.cust || req.name || 'Customer'}`;
+  document.getElementById('email-preview').value = `To: ${to}\nSubject: ${subject}\n\n${body}`;
+  document.getElementById('email-copy-status').textContent = '';
+  document.getElementById('email-modal').classList.add('open');
+}
+
+function openMailApp() {
+  if (!pendingEmail) return;
+  window.location.href = `mailto:${pendingEmail.to}?subject=${encodeURIComponent(pendingEmail.subject)}&body=${encodeURIComponent(pendingEmail.body)}`;
+}
+
+function openOutlookWeb() {
+  if (!pendingEmail) return;
+  const url = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(pendingEmail.to)}&subject=${encodeURIComponent(pendingEmail.subject)}&body=${encodeURIComponent(pendingEmail.body)}`;
+  window.open(url, '_blank');
+}
+
+async function copyEmailToClipboard() {
+  if (!pendingEmail) return;
+  const text   = `To: ${pendingEmail.to}\nSubject: ${pendingEmail.subject}\n\n${pendingEmail.body}`;
+  const status = document.getElementById('email-copy-status');
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = '\u2713 Copied to clipboard';
+  } catch (e) {
+    const preview = document.getElementById('email-preview');
+    preview.select();
+    status.textContent = 'Couldn\u2019t access the clipboard \u2014 text is selected below, press Ctrl/Cmd+C';
+  }
+}
+
+function closeEmailModal() {
+  document.getElementById('email-modal').classList.remove('open');
+  pendingEmail = null;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   AI CHAT WIDGET
+   ════════════════════════════════════════════════════════════════ */
+let chatHistory = [];
+let chatPassword = null;
+
+function toggleChatPanel() {
+  const panel = document.getElementById('chat-panel');
+  panel.classList.toggle('open');
+  if (!panel.classList.contains('open')) return;
+
+  chatPassword = localStorage.getItem('ic_chat_pw');
+  const unlocked = !!chatPassword;
+  document.getElementById('chat-pw-row').style.display    = unlocked ? 'none'  : 'block';
+  document.getElementById('chat-messages').style.display  = unlocked ? 'block' : 'none';
+  document.getElementById('chat-input-row').style.display = unlocked ? 'flex'  : 'none';
+  document.getElementById(unlocked ? 'chat-input' : 'chat-pw-input').focus();
+}
+
+async function submitChatPassword() {
+  const pw = document.getElementById('chat-pw-input').value.trim();
+  if (!pw) return;
+  const errEl = document.getElementById('chat-pw-error');
+  errEl.textContent = 'Checking...';
+  try {
+    const res = await fetch(API_BASE + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw, messages: [] }),
+    });
+    if (res.status === 401) {
+      errEl.textContent = 'Incorrect passphrase.';
+      return;
+    }
+    if (!res.ok) {
+      errEl.textContent = 'Could not reach the assistant. Try again shortly.';
+      return;
+    }
+    chatPassword = pw;
+    localStorage.setItem('ic_chat_pw', pw);
+    chatHistory = [];
+    document.getElementById('chat-pw-row').style.display    = 'none';
+    document.getElementById('chat-messages').style.display  = 'block';
+    document.getElementById('chat-input-row').style.display = 'flex';
+    renderChatMessages();
+    document.getElementById('chat-input').focus();
+  } catch (e) {
+    errEl.textContent = 'Could not reach the assistant. Try again shortly.';
+  }
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function renderChatMessages() {
+  const el = document.getElementById('chat-messages');
+  el.innerHTML = chatHistory.map(m =>
+    `<div class="chat-msg ${m.role}">${escapeHtml(m.content)}</div>`
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  chatHistory.push({ role: 'user', content: text });
+  renderChatMessages();
+
+  const el = document.getElementById('chat-messages');
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'chat-msg assistant';
+  loadingDiv.id = 'chat-loading';
+  loadingDiv.textContent = '...';
+  el.appendChild(loadingDiv);
+  el.scrollTop = el.scrollHeight;
+
+  try {
+    const res = await fetch(API_BASE + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: chatPassword, messages: chatHistory }),
+    });
+    document.getElementById('chat-loading')?.remove();
+
+    if (res.status === 401) {
+      localStorage.removeItem('ic_chat_pw');
+      chatPassword = null;
+      chatHistory.push({ role: 'assistant', content: 'Your passphrase is no longer valid. Please reopen the chat and re-enter it.' });
+      renderChatMessages();
+      return;
+    }
+    if (!res.ok) {
+      chatHistory.push({ role: 'assistant', content: 'Something went wrong — please try again.' });
+      renderChatMessages();
+      return;
+    }
+    const data = await res.json();
+    chatHistory.push({ role: 'assistant', content: data.reply });
+    renderChatMessages();
+  } catch (e) {
+    document.getElementById('chat-loading')?.remove();
+    chatHistory.push({ role: 'assistant', content: 'Something went wrong — please try again.' });
+    renderChatMessages();
+  }
 }
 
 function renderWatchlist() {
@@ -1082,10 +1305,20 @@ function saveAsWatchRequest() {
 function exportWatchlist() {
   loadWatchlist();
   if (!watchlist.length) { alert('No saved requests to export yet.'); return; }
-  const blob = new Blob([JSON.stringify(watchlist, null, 2)], { type: 'application/json' });
+  const colorLabel = v => v === 'YES' ? 'Color only' : v === 'NO' ? 'B&W only' : 'Either';
+  const yesNoLabel  = v => v === 'yes' || v === 'YES' ? 'Required' : v === 'no' || v === 'NO' ? 'Not required' : 'Either';
+  const h = ['Customer Name', 'Email', 'Phone', 'Qty Needed', 'Brand', 'Model Contains',
+    'Max Meter', 'Max Price', 'Color/B&W', 'State', 'Finisher', 'Fax', 'Notes', 'Date Added'];
+  const rows = watchlist.map(req => [
+    req.cust || req.name || '', req.email || '', req.phone || '', req.qty || '',
+    req.brand || '', req.model || '', req.maxMeter || '', req.maxPrice || '',
+    colorLabel(req.color), req.state || '', yesNoLabel(req.finisher), yesNoLabel(req.fax),
+    req.notes || '', req.createdDate || ''
+  ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+  const blob = new Blob([[h.join(','), ...rows].join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `IC_Customer_Watchlist_${new Date().toISOString().slice(0,10)}.json`;
+  a.download = `IC_Customer_Watchlist_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 }
 

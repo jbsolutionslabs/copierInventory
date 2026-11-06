@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from db import engine as _engine
+
 log = logging.getLogger(__name__)
 
 _OBSERVATIONS_DAYS  = int(os.environ.get("RETENTION_OBSERVATIONS_DAYS", 90))
@@ -130,15 +132,15 @@ def run_retention_cleanup(db: Session) -> dict:
         results["scrape_runs"] = -1
 
     # 5. VACUUM ANALYZE — reclaims disk space (PostgreSQL only; no-op on SQLite)
+    # VACUUM must run outside any transaction, so we open a raw AUTOCOMMIT connection.
     try:
-        db.execute(text("VACUUM ANALYZE listing_observations"))
-        db.execute(text("VACUUM ANALYZE machine_events"))
-        db.execute(text("VACUUM ANALYZE scrape_runs"))
+        with _engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text("VACUUM ANALYZE listing_observations"))
+            conn.execute(text("VACUUM ANALYZE machine_events"))
+            conn.execute(text("VACUUM ANALYZE scrape_runs"))
         log.info("[cleanup] VACUUM ANALYZE complete.")
     except Exception:
-        # VACUUM cannot run inside a transaction on PostgreSQL — that's OK,
-        # the DELETEs already committed above still free space.
-        log.debug("[cleanup] VACUUM skipped (expected outside transaction)")
+        log.exception("[cleanup] VACUUM ANALYZE failed")
 
     log.info("[cleanup] Done: %s", results)
     return results

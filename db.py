@@ -116,6 +116,7 @@ class WatchlistItem(Base):
     finisher   = Column(String(10))
     fax        = Column(String(10))
     notes      = Column(Text)
+    serial     = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     # --- Phase 0 additions (nullable; added via SQL migration on PostgreSQL) ---
     budget_min        = Column(Float,        nullable=True)

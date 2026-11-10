@@ -334,11 +334,12 @@ tbody tr:nth-child(even){background:#F8FAFD}
       <div class="big" id="wl-banner-big">No saved customer requests yet</div>
       <div class="lbl">Add a request below — the page highlights matches the moment inventory updates</div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn bc" style="font-size:11px" onclick="document.getElementById('wl-import').click()">
         ⬆ Import List<input type="file" id="wl-import" accept=".json" style="display:none" onchange="importWatchlist(event)">
       </button>
-      <button class="btn be" style="font-size:11px" onclick="exportWatchlist()">⬇ Export List</button>
+      <button class="btn be" style="font-size:11px" onclick="exportWatchlist()">⬇ Export Requests</button>
+      <button class="btn be" style="font-size:11px" onclick="exportWatchlistWithMatches()">⬇ Export with Matches</button>
     </div>
   </div>
 
@@ -358,6 +359,8 @@ tbody tr:nth-child(even){background:#F8FAFD}
         <select id="wf-brand"><option value="">Any Brand</option></select></div>
       <div class="field"><label>Model (contains)</label>
         <input type="text" id="wf-model" placeholder='e.g. "IM C4500"'></div>
+      <div class="field"><label>Serial # (exact)</label>
+        <input type="text" id="wf-serial" placeholder='e.g. "AB12345"'></div>
       <div class="field"><label>Max Meter</label>
         <input type="number" id="wf-meter" placeholder="e.g. 500000" min="0"></div>
       <div class="field"><label>Max Price ($)</label>
@@ -387,6 +390,17 @@ tbody tr:nth-child(even){background:#F8FAFD}
       <button class="btn bc" onclick="resetForm()">✕ Cancel</button>
       <span id="wf-edit-note" style="font-size:11px;color:var(--muted);font-style:italic"></span>
     </div>
+  </div>
+
+  <div id="wl-filter-bar" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 4px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+    <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">FILTER EXPORT:</span>
+    <input type="text" id="wl-filter-customer" placeholder="Customer name..." oninput="updateWlFilterHint()"
+      style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--fg);width:160px">
+    <input type="text" id="wl-filter-model" placeholder="Brand or model..." oninput="updateWlFilterHint()"
+      style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--fg);width:160px">
+    <span id="wl-filter-hint" style="font-size:11px;color:var(--muted);font-style:italic"></span>
+    <button class="btn" onclick="document.getElementById('wl-filter-customer').value='';document.getElementById('wl-filter-model').value='';updateWlFilterHint();"
+      style="font-size:11px;padding:3px 8px">✕ Clear</button>
   </div>
 
   <div id="wl-list"></div>
@@ -860,6 +874,7 @@ function readForm() {
     qty:      document.getElementById('wf-qty').value.trim(),
     brand:    document.getElementById('wf-brand').value,
     model:    document.getElementById('wf-model').value.trim(),
+    serial:   document.getElementById('wf-serial').value.trim(),
     maxMeter: document.getElementById('wf-meter').value,
     maxPrice: document.getElementById('wf-price').value,
     color:    document.getElementById('wf-color').value,
@@ -877,6 +892,7 @@ function writeForm(req) {
   document.getElementById('wf-qty').value     = req.qty     || '';
   document.getElementById('wf-brand').value   = req.brand   || '';
   document.getElementById('wf-model').value   = req.model   || '';
+  document.getElementById('wf-serial').value  = req.serial  || '';
   document.getElementById('wf-meter').value   = req.maxMeter|| '';
   document.getElementById('wf-price').value   = req.maxPrice|| '';
   document.getElementById('wf-color').value   = req.color   || '';
@@ -955,6 +971,7 @@ function deleteRequest(id) {
 function matchRequest(req) {
   return ALL.filter(r => {
     if (req.brand && r.brand.toLowerCase() !== req.brand.toLowerCase()) return false;
+    if (req.serial && (r.serial || '').toLowerCase() !== req.serial.toLowerCase()) return false;
     if (req.model) {
       const models = req.model.split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
       const inv = (r.model || '').toLowerCase();
@@ -984,6 +1001,7 @@ function criteriaTags(req) {
   const tags = [];
   if (req.brand)   tags.push(req.brand);
   if (req.model)   tags.push(`Model: "${req.model}"`);
+  if (req.serial)  tags.push(`Serial: ${req.serial}`);
   if (req.maxMeter) tags.push(`\u2264 ${parseInt(req.maxMeter).toLocaleString()} meter`);
   if (req.maxPrice) tags.push(`\u2264 $${parseFloat(req.maxPrice).toLocaleString()}`);
   if (req.color === 'YES') tags.push('Color only');
@@ -1169,6 +1187,7 @@ function renderWatchlist() {
   const bannerBig = document.getElementById('wl-banner-big');
   const pill      = document.getElementById('wl-pill');
 
+  const filterBar = document.getElementById('wl-filter-bar');
   if (!watchlist.length) {
     listEl.innerHTML = `<div class="wl-empty-cards">
       <div class="ico">👤</div>
@@ -1177,8 +1196,10 @@ function renderWatchlist() {
     banner.className = 'wl-banner zero';
     bannerBig.textContent = 'No saved customer requests yet';
     pill.style.display = 'none';
+    if (filterBar) filterBar.style.display = 'none';
     return;
   }
+  if (filterBar) filterBar.style.display = 'flex';
 
   let totalMatches = 0, totalNewMatches = 0, reqsWithNew = 0;
   const computed = watchlist.map(req => {
@@ -1307,23 +1328,85 @@ function saveAsWatchRequest() {
   document.getElementById('wf-name').focus();
 }
 
-function exportWatchlist() {
+function _wlFilteredRequests() {
   loadWatchlist();
-  if (!watchlist.length) { alert('No saved requests to export yet.'); return; }
+  const fc = (document.getElementById('wl-filter-customer')?.value || '').trim().toLowerCase();
+  const fm = (document.getElementById('wl-filter-model')?.value || '').trim().toLowerCase();
+  return watchlist.filter(req => {
+    if (fc && !(req.cust || req.name || '').toLowerCase().includes(fc)) return false;
+    if (fm && !(req.brand || '').toLowerCase().includes(fm) && !(req.model || '').toLowerCase().includes(fm)) return false;
+    return true;
+  });
+}
+
+function updateWlFilterHint() {
+  const filtered = _wlFilteredRequests();
+  const hint = document.getElementById('wl-filter-hint');
+  if (!hint) return;
+  const fc = (document.getElementById('wl-filter-customer')?.value || '').trim();
+  const fm = (document.getElementById('wl-filter-model')?.value || '').trim();
+  hint.textContent = (fc || fm) ? `${filtered.length} request${filtered.length !== 1 ? 's' : ''} match` : '';
+}
+
+function exportWatchlist() {
+  const filtered = _wlFilteredRequests();
+  if (!filtered.length) { alert('No requests match your filter.'); return; }
   const colorLabel = v => v === 'YES' ? 'Color only' : v === 'NO' ? 'B&W only' : 'Either';
-  const yesNoLabel  = v => v === 'yes' || v === 'YES' ? 'Required' : v === 'no' || v === 'NO' ? 'Not required' : 'Either';
-  const h = ['Customer Name', 'Email', 'Phone', 'Qty Needed', 'Brand', 'Model Contains',
+  const yesNoLabel = v => v === 'yes' || v === 'YES' ? 'Required' : v === 'no' || v === 'NO' ? 'Not required' : 'Either';
+  const h = ['Customer Name', 'Email', 'Phone', 'Qty Needed', 'Brand', 'Model Contains', 'Serial #',
     'Max Meter', 'Max Price', 'Color/B&W', 'State', 'Finisher', 'Fax', 'Notes', 'Date Added'];
-  const rows = watchlist.map(req => [
+  const rows = filtered.map(req => [
     req.cust || req.name || '', req.email || '', req.phone || '', req.qty || '',
-    req.brand || '', req.model || '', req.maxMeter || '', req.maxPrice || '',
+    req.brand || '', req.model || '', req.serial || '', req.maxMeter || '', req.maxPrice || '',
     colorLabel(req.color), req.state || '', yesNoLabel(req.finisher), yesNoLabel(req.fax),
     req.notes || '', req.createdDate || ''
   ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
   const blob = new Blob([[h.join(','), ...rows].join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `IC_Customer_Watchlist_${new Date().toISOString().slice(0,10)}.csv`;
+  const fc = (document.getElementById('wl-filter-customer')?.value || '').trim();
+  const fm = (document.getElementById('wl-filter-model')?.value || '').trim();
+  a.download = `IC_Customer_Watchlist_${new Date().toISOString().slice(0,10)}${fc || fm ? '_filtered' : ''}.csv`;
+  a.click();
+}
+
+function exportWatchlistWithMatches() {
+  const filtered = _wlFilteredRequests();
+  if (!filtered.length) { alert('No requests match your filter.'); return; }
+  const colorLabel = v => v === 'YES' ? 'Color only' : v === 'NO' ? 'B&W only' : 'Either';
+  const yesNoLabel = v => v === 'yes' || v === 'YES' ? 'Required' : v === 'no' || v === 'NO' ? 'Not required' : 'Either';
+  const h = [
+    'Customer Name', 'Email', 'Phone',
+    'Brand Wanted', 'Model Wanted', 'Serial Wanted', 'Max Meter', 'Max Price', 'Color', 'State Wanted', 'Finisher', 'Fax', 'Notes',
+    'Match #', 'Vendor', 'Brand', 'Model', 'Serial', 'INV#', 'State', 'Total Meter', 'Price', 'Condition', 'Config', 'Is New?'
+  ];
+  const rows = [];
+  for (const req of filtered) {
+    const matches = matchRequest(req);
+    const reqCols = [
+      req.cust || req.name || '', req.email || '', req.phone || '',
+      req.brand || '', req.model || '', req.serial || '', req.maxMeter || '', req.maxPrice || '',
+      colorLabel(req.color), req.state || '', yesNoLabel(req.finisher), yesNoLabel(req.fax), req.notes || ''
+    ];
+    if (!matches.length) {
+      rows.push([...reqCols, 'No matches', '', '', '', '', '', '', '', '', '', '', '']
+        .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+    } else {
+      matches.forEach((m, i) => {
+        rows.push([...reqCols,
+          i + 1, m.vendor || '', m.brand || '', m.model || '', m.serial || '', m.inv || '',
+          m.state || '', m.total || '', m.price != null ? m.price : '', m.condition || '', m.config || '',
+          m.isNew ? 'NEW' : ''
+        ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+      });
+    }
+  }
+  const blob = new Blob([[h.join(','), ...rows].join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const fc = (document.getElementById('wl-filter-customer')?.value || '').trim();
+  const fm = (document.getElementById('wl-filter-model')?.value || '').trim();
+  a.download = `IC_Watchlist_Matches_${new Date().toISOString().slice(0,10)}${fc || fm ? '_filtered' : '_all'}.csv`;
   a.click();
 }
 

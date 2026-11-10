@@ -33,6 +33,7 @@ class WatchlistItemIn(BaseModel):
     finisher: str | None = None
     fax:      str | None = None
     notes:    str | None = None
+    serial:   str | None = None
 
 
 def _orm_to_dict(item: WatchlistItem) -> dict:
@@ -50,6 +51,7 @@ def _orm_to_dict(item: WatchlistItem) -> dict:
         "finisher": item.finisher or "",
         "fax":      item.fax or "",
         "notes":    item.notes or "",
+        "serial":   item.serial or "",
         "createdAt": item.created_at.strftime("%Y-%m-%dT%H:%M:%SZ") if item.created_at else "",
     }
 
@@ -76,6 +78,7 @@ def add_watchlist_item(item: WatchlistItemIn, db: Session = Depends(get_db)):
         finisher   = item.finisher,
         fax        = item.fax,
         notes      = item.notes,
+        serial     = item.serial,
         created_at = datetime.utcnow(),
     )
     db.add(record)
@@ -95,7 +98,7 @@ def update_watchlist_item(item_id: str, item: WatchlistItemIn, db: Session = Dep
     for field, attr in [
         ("email", "email"), ("phone", "phone"), ("brand", "brand"), ("model", "model"),
         ("color", "color"), ("state", "state"),
-        ("finisher", "finisher"), ("fax", "fax"), ("notes", "notes"),
+        ("finisher", "finisher"), ("fax", "fax"), ("notes", "notes"), ("serial", "serial"),
     ]:
         val = getattr(item, field)
         if val is not None:
@@ -137,6 +140,7 @@ def import_watchlist(items: list[dict], db: Session = Depends(get_db)):
             finisher   = item_dict.get("finisher"),
             fax        = item_dict.get("fax"),
             notes      = item_dict.get("notes"),
+            serial     = item_dict.get("serial"),
             created_at = datetime.utcnow(),
         )
         db.add(record)
@@ -163,6 +167,7 @@ def bulk_sync_watchlist(payload: WatchlistBulk, db: Session = Depends(get_db)):
             finisher   = item_dict.get("finisher"),
             fax        = item_dict.get("fax"),
             notes      = item_dict.get("notes"),
+            serial     = item_dict.get("serial"),
             created_at = datetime.utcnow(),
         )
         db.add(record)
@@ -190,6 +195,7 @@ def get_watchlist_matches(db: Session = Depends(get_db)):
         req = {
             "brand":    wl.brand or "",
             "model":    wl.model or "",
+            "serial":   wl.serial or "",
             "color":    wl.color or "",
             "state":    wl.state or "",
             "finisher": wl.finisher or "",
@@ -206,7 +212,7 @@ def get_watchlist_matches(db: Session = Depends(get_db)):
                 "phone":        wl.phone or "",
                 "matches":      all_matches[:20],
                 "matchCount":   len(all_matches),
-                "criteria":     {k: req.get(k) for k in ("brand", "model", "maxMeter", "maxPrice", "color", "state", "finisher", "fax")},
+                "criteria":     {k: req.get(k) for k in ("brand", "model", "serial", "maxMeter", "maxPrice", "color", "state", "finisher", "fax")},
             })
 
     checked_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")

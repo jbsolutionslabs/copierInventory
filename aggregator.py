@@ -405,6 +405,7 @@ def _find_matches(req: dict, inventory: list[dict]) -> list[dict]:
     results = []
     brand    = (req.get("brand") or "").strip().lower()
     model    = (req.get("model") or "").strip().lower()
+    serial   = (req.get("serial") or "").strip().lower()
     color    = req.get("color") or ""
     state    = (req.get("state") or "").strip().upper()
     finisher = req.get("finisher") or ""
@@ -414,6 +415,8 @@ def _find_matches(req: dict, inventory: list[dict]) -> list[dict]:
 
     for r in inventory:
         if brand and r.get("brand", "").lower() != brand:
+            continue
+        if serial and r.get("serial", "").lower() != serial:
             continue
         if model:
             models = [m.strip() for m in model.split(",") if m.strip()]

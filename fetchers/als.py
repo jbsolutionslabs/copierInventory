@@ -17,12 +17,10 @@ AJAX_URL       = "https://alscopiers.com/wp-admin/admin-ajax.php"
 TABLE_ID       = "2992"
 REST_URL       = f"https://alscopiers.com/wp-json/ninja-tables/v1/tables/{TABLE_ID}/public-data"
 
+# ALS's server drops connections that send a full desktop-Chrome UA string
+# (verified Nov 2026); a short UA is served normally.
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": "Mozilla/5.0 (Macintosh) Chrome/124",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
